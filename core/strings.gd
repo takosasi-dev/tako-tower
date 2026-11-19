@@ -1,0 +1,56 @@
+# 画面に出す文言(画面設計書 §7・INV-8)。文言はここだけに置く。tools/subset_font.py はこのファイルの文字で字体を絞る。
+# 共有する文字の URL もここに 1 か所だけ書く(§9.11)。
+extends RefCounted
+
+const TITLE := "TakoTower"
+const TAGLINE := "タップした壁に、張り付いて登る"
+const BTN_FIXED := "いつもの塔"
+const BTN_DAILY := "今日の塔"
+const BTN_SETTINGS := "設定"
+const VERSION := "v0.1.0"
+const REC_BEST := "最高 %s秒 / %d手"
+const REC_FIRST := "1回目 %s秒"
+const REC_TODAY_BEST := "今日の最高 %s秒"
+const REC_NONE := "まだ登っていない"
+const LOAD_FAILED := "保存を読めなかったので、記録を初めからにした"
+const DATA_BROKEN := "区画のデータが壊れている"
+
+const HINT := "上の壁をタップ"
+const HUD_SEGMENT := "区画 %d/5"
+const HUD_MOVES := "手数 %d"
+
+const RESULT_TITLE := "ゴール"
+const RESULT_TIME := "%s秒"
+const DIFF_NEW := "最高 −%s(新しい記録)"
+const DIFF_BEHIND := "最高まで +%s"
+const RESULT_MOVES := "%d手"
+const RESULT_MISSES := "ミス %d"
+const TABLE_SEG := "区画"
+const TABLE_NOW := "今回"
+const TABLE_BEST := "最高の時"
+const TABLE_DIFF := "差"
+const BTN_RETRY := "やり直す"
+const BTN_COPY := "コピー"
+const BTN_TITLE := "タイトルへ"
+const COPIED := "コピーを試した。貼れない時は枠から写す"
+const SAVE_FAILED := "このブラウザでは記録を残せない"
+
+const SETTINGS := "設定"
+const VOLUME := "音量"
+const SHAKE := "画面の揺れ"
+const REDUCE_FLASH := "点滅を弱める"
+const GHOST := "最高の時の影"
+const ON := "入"
+const OFF := "切"
+const BACK := "戻る"
+
+const PAUSED := "一時停止"
+const BTN_RESUME := "続ける"
+
+# 共有する文字(§9.11)
+const SHARE_HEAD := "TakoTower %s(%s)"
+const SHARE_DAILY_FIRST := "今日の塔・1回目"
+const SHARE_DAILY := "今日の塔"
+const SHARE_FIXED := "いつもの塔"
+const SHARE_BODY := "%s秒 / %d手 / ミス %d"
+const URL := "https://takosasi-dev.github.io/tako-tower/"

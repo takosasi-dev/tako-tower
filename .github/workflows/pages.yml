@@ -1,0 +1,94 @@
+# テスト → Web 書き出し → GitHub Pages へ配置。
+# テストが落ちたら build ジョブが失敗し、deploy ジョブは走らない。
+# Actions はコミットの SHA で留める(版の札は後から付け替えられる)。版は横に書く。2026-11-14 に releases/latest で確かめた。
+# Pages へ書く権限は deploy のジョブだけに渡す(build は取ってきた Godot とテストを動かすので、読むだけにする)。
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+  # 書き出しテンプレートのフォルダ名(GODOT_VERSION_FULL_CONFIG)
+  GODOT_TEMPLATE_DIR: 4.7.2.stable
+  # 取ってきた物の照合。Godot の同じリリースにある SHA512-SUMS.txt の値(2026-11-14)。Godot の版を上げたら、ここも替える
+  GODOT_ZIP_SHA512: 9aa00f7a605200940bce3027a567b782f49bd8e940dd06ae9e987bd65aee1b1467edd56ed84fcdcbdd44354bf613bdbb4e5d2913e925850368e150c59ed54c65
+  GODOT_TPZ_SHA512: ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648d2e5f40980c9adc28d23e1b92e732ee7bf3461997aa804af74ec2fcd7a93ccb84079
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Godot 本体と書き出しテンプレートを取得
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
+          mkdir -p "$HOME/godot"
+          cd "$HOME/godot"
+          curl -fsSL -o godot.zip "$base/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          echo "${GODOT_ZIP_SHA512}  godot.zip" | sha512sum -c -
+          unzip -q godot.zip
+          mv "Godot_v${GODOT_VERSION}_linux.x86_64" godot
+          # ._sc_ があると自己完結モードになり、テンプレートを editor_data/export_templates/ から読む
+          touch ._sc_
+          tdir="editor_data/export_templates/${GODOT_TEMPLATE_DIR}"
+          mkdir -p "$tdir"
+          curl -fsSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          echo "${GODOT_TPZ_SHA512}  templates.tpz" | sha512sum -c -
+          unzip -q -j templates.tpz templates/web_nothreads_release.zip templates/web_nothreads_debug.zip templates/version.txt -d "$tdir"
+          rm godot.zip templates.tpz
+          echo "templates: $HOME/godot/$tdir"
+          ls -la "$tdir"
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: インポート
+        run: godot --headless --import
+
+      - name: テスト
+        # テストが呼んだ先のスクリプトエラーは終了コードに出ないので、出力でも拾う
+        run: |
+          set -euo pipefail
+          godot --headless --script res://tests/run_tests.gd 2>&1 | tee test.log
+          if grep -q "SCRIPT ERROR" test.log; then echo "出力に SCRIPT ERROR がある"; exit 1; fi
+
+      - name: Web 書き出し
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          godot --headless --export-release "Web" build/web/index.html
+
+      - name: 書き出した物を確かめる
+        run: |
+          set -euo pipefail
+          ls -la build/web
+          test -s build/web/index.html
+          test -s build/web/index.wasm
+          test -s build/web/index.pck
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
