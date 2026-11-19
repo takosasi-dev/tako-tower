@@ -155,6 +155,29 @@ func test_daily_entry_and_taps_before_unlock() -> bool:
 	return true
 
 
+func test_daily_result_and_title_records() -> bool:
+	# 今日の塔: 結果の文字に「今日の塔・1回目」、タイトルに「1回目」、2 回目は「今日の塔)」と最高との差(塔は登らせず、結果を渡す)
+	var m := _main()
+	click(button(m.current, "daily"))
+	var res := {"ticks": 1200, "moves": 30, "misses": 1, "splits": [200, 400, 600, 900, 1200], "log": [[0, 340, 6300]]}
+	m._on_finished(res)
+	eq(m.screen, "result", "結果")
+	ok((m.current.share as String).contains("(今日の塔・1回目)"), "1 回目の共有の文字: " + m.current.share)
+	click(button(m.current, "title"))
+	var labels: Array = m.current.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text)
+	ok(labels.any(func(t: String) -> bool: return t.begins_with("1回目 10.00秒")), "タイトルに 1 回目: %s" % [labels])
+	click(button(m.current, "daily"))
+	res["ticks"] = 1100
+	res["splits"] = [200, 400, 600, 800, 1100]
+	m._on_finished(res)
+	ok((m.current.share as String).contains("(今日の塔)"), "2 回目の共有の文字")
+	var texts: Array = m.current.find_children("*", "Label", true, false).map(func(l: Label) -> String: return l.text)
+	ok(texts.has("最高 −0.83(新しい記録)"), "最高との差の行: %s" % [texts])
+	ok(texts.has("−0.83"), "区画の表の差")
+	_done(m)
+	return true
+
+
 func test_e18_broken_data_disables_entry() -> bool:
 	var m := _main()
 	m.data_ok = false

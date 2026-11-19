@@ -237,7 +237,8 @@ func _tick_brittle() -> void:
 func _check_miss() -> void:
 	if state == RESPAWN:
 		return
-	if _touches_spike():
+	# 飛ぶ途中は、腕を出した後にもろい壁が戻った時だけ見る(腕が 4 px 刻みで確かめた道を、10 px 刻みで別の結果にしない)
+	if (state != FLY or restores != _restores_at_cast) and _touches_spike():
 		_miss("spike")
 	elif state == FALL and y >= tower.seg_bottom_y(checkpoint) + B.FALL_MISS_DEPTH:
 		_miss("fall")
