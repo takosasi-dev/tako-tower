@@ -15,14 +15,14 @@ var _buttons := {}  # 設定の名前 → { 値: ボタン }
 func build(p_store: RefCounted) -> void:
 	store = p_store
 	size = Vector2(B.VIEW_W, B.VIEW_H)
-	add_child(Kit.place(Kit.label(S.SETTINGS, 48, Kit.C_TEXT, 700), 0, 160, B.VIEW_W, 70))
-	var y := 300.0
+	add_child(Kit.place(Kit.label(S.SETTINGS, 48, Kit.C_TEXT, 700), 0, 150, B.VIEW_W, 70))
+	var y := 280.0
 	_row(S.VOLUME, y, "volume", B.VOLUMES.map(func(v: int) -> Array: return [v, str(v)]))
-	y += 150
+	y += 176
 	for k: Array in [["shake", S.SHAKE], ["reduce_flash", S.REDUCE_FLASH], ["ghost", S.GHOST]]:
 		_row(k[1], y, k[0], [[true, S.ON], [false, S.OFF]])
-		y += 150
-	var ret := Kit.place(Kit.button("back", S.BACK, 32), 220, y + 20, 280, 88)
+		y += 176
+	var ret := Kit.place(Kit.button("back", S.BACK, 32), 220, y + 24, 280, 88)
 	ret.pressed.connect(func() -> void: back.emit())
 	add_child(ret)
 	_paint()

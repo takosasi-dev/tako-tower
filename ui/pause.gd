@@ -12,7 +12,7 @@ func build() -> void:
 	size = Vector2(B.VIEW_W, B.VIEW_H)
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.7)
-	add_child(Kit.place(dim, 0, 0, B.VIEW_W, B.VIEW_H))
+	add_child(Kit.place(dim, -2000, -2000, B.VIEW_W + 4000, B.VIEW_H + 4000))  # 横長の画面の左右の余りも暗くする
 	add_child(Kit.place(Kit.label(S.PAUSED, 48, Kit.C_TEXT, 700), 0, 300, B.VIEW_W, 70))
 	var y := 430.0
 	for pair: Array in [["resume", S.BTN_RESUME], ["restart", S.BTN_RETRY], ["settings", S.BTN_SETTINGS], ["title", S.BTN_TITLE]]:

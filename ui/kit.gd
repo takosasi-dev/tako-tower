@@ -87,17 +87,27 @@ static func place(c: Control, x: float, y: float, w: float, h: float) -> Control
 	return c
 
 
-# タコ(丸・目 2 個・足の線 4 本)。sx・sy でつぶし、alpha で薄くする。
-static func draw_tako(ci: CanvasItem, p: Vector2, sx: float, sy: float, color: Color) -> void:
+# タコ(丸・目 2 個・足の線 4 本。丸と線だけ)。sx・sy でつぶし、alpha で薄くする。
+# look は目を寄せる向き(長さ 0〜1)、legs は足の生える向き(長さ 1。既定は下)、wiggle は足の揺れ(px)、blink で目を閉じる。
+static func draw_tako(ci: CanvasItem, p: Vector2, sx: float, sy: float, color: Color, look := Vector2.ZERO,
+		legs := Vector2(0, 1), wiggle := 0.0, blink := false) -> void:
 	var r := 16.0
 	var pts := PackedVector2Array()
 	for k in 24:
 		var a := TAU * k / 24.0
 		pts.append(p + Vector2(cos(a) * r * sx, sin(a) * r * sy))
+	var n := Vector2(-legs.y, legs.x)
+	for i in 4:
+		var o := i - 1.5
+		var w := wiggle * (1.0 if i % 2 == 0 else -1.0)
+		var base := p + (legs * (r - 3.0) + n * (o * 7.0)) * Vector2(sx, sy)
+		ci.draw_line(base, base + legs * 9.0 + n * (o * 2.5 + w), color, 3.0, true)
 	ci.draw_colored_polygon(pts, color)
-	for dx: float in [-11.0, -4.0, 4.0, 11.0]:
-		var base := p + Vector2(dx * sx, (r - 3.0) * sy)
-		ci.draw_line(base, base + Vector2(dx * 0.25, 9.0 * sy), color, 3.0, true)
 	var eye := Color(0.06, 0.07, 0.09, color.a)
-	ci.draw_circle(p + Vector2(-5.5 * sx, -3.0 * sy), 2.6, eye)
-	ci.draw_circle(p + Vector2(5.5 * sx, -3.0 * sy), 2.6, eye)
+	for side: float in [-1.0, 1.0]:
+		var e := p + Vector2(side * 5.5 * sx, -3.0 * sy) + look * 2.0
+		if blink:
+			ci.draw_line(e - Vector2(2.6, 0), e + Vector2(2.6, 0), eye, 1.6, true)
+		else:
+			ci.draw_circle(e, 2.6, eye)
+			ci.draw_circle(e + Vector2(-0.8, -0.9), 0.9, Color(1, 1, 1, 0.9 * color.a))

@@ -30,6 +30,13 @@ var run := {}  # 今の回 { kind, day, date, tower }
 var auto := false
 var auto_log: Array = []
 var _visibility_cb: Variant = null
+# ?debug=1(Web)/ --debug: window.ttState に状態を出し、window.ttTap(wx, wy) で塔の中の点を押せる(窓なし Chrome の確かめ用)
+var debug := false
+var frame_ms: Array = []
+var lat_ms: Array = []  # 押してから腕を描いたフレームまで(NFR-2)
+var _last_frame := 0
+var _arm_drawn := -100000
+var _tap_cb: Variant = null
 
 
 func _ready() -> void:
@@ -49,7 +56,29 @@ func _ready() -> void:
 	segments = d.get("segments", [])
 	_apply_settings()
 	_watch_visibility()
+	debug = _flag("debug")
+	get_viewport().size_changed.connect(_fit)
+	_fit()
+	RenderingServer.frame_post_draw.connect(_after_draw)
+	if debug and OS.has_feature("web"):
+		_tap_cb = JavaScriptBridge.create_callback(func(a: Array) -> void:
+			if play != null:
+				play.tap_world(int(a[0]), int(a[1])))
+		JavaScriptBridge.get_interface("window").ttTap = _tap_cb
 	_show_title()
+
+
+# 720×1280 を画面の真ん中に置く(stretch の aspect は expand。余りは背景色の下敷きが埋める。E-19)。
+func _fit() -> void:
+	var vs := get_viewport().get_visible_rect().size
+	stage.position = ((vs - Vector2(B.VIEW_W, B.VIEW_H)) / 2.0).floor()
+
+
+static func _flag(flag: String) -> bool:
+	if OS.has_feature("web"):
+		var q: Variant = JavaScriptBridge.eval("location.search", true)
+		return q is String and q.contains(flag + "=1")
+	return OS.get_cmdline_user_args().has("--" + flag)
 
 
 func _apply_settings() -> void:
@@ -251,6 +280,53 @@ func _settings_back() -> void:
 		pause_view.visible = true
 	else:
 		_show_title()
+
+
+# --- デバッグ用の窓口(読むだけ。?debug=1 の時だけ JS に出す) ---
+
+func _after_draw() -> void:
+	var now := Time.get_ticks_usec()
+	if _last_frame > 0 and frame_ms.size() < 20000:
+		frame_ms.append((now - _last_frame) / 1000.0)
+	_last_frame = now
+	if play != null and play._view != null and play._view._arm_at != _arm_drawn:
+		_arm_drawn = play._view._arm_at
+		if play.tap_at_us > 0 and lat_ms.size() < 2000:
+			lat_ms.append((now - play.tap_at_us) / 1000.0)
+	if debug and OS.has_feature("web"):
+		JavaScriptBridge.eval("window.ttState=" + JSON.stringify(JSON.stringify(state())), true)
+		if frame_ms.size() % 60 == 0:
+			JavaScriptBridge.eval("window.ttStats=" + JSON.stringify(JSON.stringify(stats())), true)
+
+
+func state() -> Dictionary:
+	var out := {"screen": screen, "paused": pause_view != null, "settings": settings_view != null, "buttons": {},
+		"sfx": Sfx.played, "unlocked": Sfx.unlocked, "save_failed": store.write_failed, "load_failed": store.load_failed}
+	var root: Control = settings_view if settings_view != null else (pause_view if pause_view != null else current)
+	if root != null:
+		for b in root.find_children("*", "Button", true, false):
+			var btn := b as Button
+			if btn.is_visible_in_tree() and not btn.disabled:
+				var at := btn.global_position - stage.position + btn.size / 2  # ステージの中の座標(gameCss が画面に直す)
+				out["buttons"][String(btn.name)] = [at.x, at.y]
+	if play != null:
+		var c: RefCounted = play.climb
+		out["play"] = {"state": c.state, "x": c.x, "y": c.y, "lock": c.cast_lock, "tick": c.sim_tick, "clock": c.clock,
+			"moves": c.moves, "misses": c.misses, "segment": c.checkpoint + 1, "over": c.over, "cam_y": play.cam_y,
+			"tower": c.tower.name, "ghost": play.ghost != null, "brittle": c.brittle.size(), "tap": [play.last_tap.x, play.last_tap.y]}
+	return out
+
+
+func stats() -> Dictionary:
+	return {"lat": _pct(lat_ms), "frame": _pct(frame_ms)}
+
+
+static func _pct(list: Array) -> Dictionary:
+	if list.is_empty():
+		return {"n": 0}
+	var s := list.duplicate()
+	s.sort()
+	return {"n": s.size(), "p50": s[s.size() / 2], "p95": s[mini(int(ceil(s.size() * 0.95)) - 1, s.size() - 1)], "max": s[-1]}
 
 
 # --- 自動の通し(--auto。ヘッドレスの smoke だけが使う。tools は書き出しに入らないので load で読む) ---

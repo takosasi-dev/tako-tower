@@ -21,8 +21,8 @@ var shake_on := true
 var reduce_flash := false
 var cam_y := 0.0
 var started_ms := 0
-var tap_at_us := 0  # 最後に押した時刻(腕が出るまでの時間を測る)
-var lat_ms: Array = []
+var tap_at_us := 0  # 最後に押した時刻(main が腕を描くまでの時間を測る)
+var last_tap := Vector2i(-1, -1)  # 最後に押した塔の中の点(?debug=1 の状態に出す)
 
 var _view: View
 var last_split := ""  # 最後に出した区切りの文字(smoke が読む)
@@ -58,7 +58,10 @@ func start(tower: RefCounted, p_ghost: Variant, p_best_splits: Array) -> void:
 	cam_y = _cam_target()
 	_hint = Kit.label(S.HINT, 28, Kit.C_DIM, 500)
 	add_child(Kit.place(_hint, 0, 0, B.VIEW_W, 40))
-	var pause := Kit.place(Kit.button("pause", "II", 32), 24, 24, 88, 88)
+	var band := HudBand.new()
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(Kit.place(band, 0, 0, B.VIEW_W, HudBand.SOLID + HudBand.FADE))
+	var pause :=Kit.place(Kit.button("pause", "II", 32), 24, 24, 88, 88)
 	pause.pressed.connect(func() -> void: pause_requested.emit())
 	add_child(pause)
 	_seg = Kit.label("", 28, Kit.C_TEXT, 500)
@@ -71,6 +74,8 @@ func start(tower: RefCounted, p_ghost: Variant, p_best_splits: Array) -> void:
 	add_child(Kit.place(_moves, 476, 44, 220, 48))
 	_cp = Kit.label("", 30, Kit.C_FAST, 700)
 	add_child(Kit.place(_cp, 0, 96, B.VIEW_W, 44))
+	_cp.pivot_offset = _cp.size / 2.0
+	_clock.pivot_offset = _clock.size / 2.0
 	_edge = EdgeFlash.new()
 	_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(Kit.place(_edge, 0, 0, B.VIEW_W, B.VIEW_H))
@@ -95,6 +100,7 @@ func tap_screen(p: Vector2) -> void:
 
 func tap_world(wx: int, wy: int) -> void:
 	tap_at_us = Time.get_ticks_usec()
+	last_tap = Vector2i(wx, wy)
 	climb.queue_cast(wx, wy)
 
 
@@ -135,8 +141,6 @@ func _step_once(now: int) -> void:
 		match e["type"]:
 			"cast_ok":
 				Sfx.play("cast")
-				if tap_at_us > 0 and lat_ms.size() < 2000:
-					lat_ms.append((Time.get_ticks_usec() - tap_at_us) / 1000.0)
 			"stick":
 				Sfx.play("stick", mini(int(e["chain"]) - 1, B.STICK_PITCH_MAX))
 				_hint.visible = false
@@ -150,15 +154,20 @@ func _step_once(now: int) -> void:
 				Sfx.play("crumble")
 			"miss":
 				Sfx.play("miss")
-				_flash_until = now + 150
-				if shake_on:
-					_shake_until = now + int(B.SHAKE_SEC * 1000)
+				on_miss(now)
 			"checkpoint":
 				Sfx.play("checkpoint")
 				_show_split(int(e["segment"]) - 2, int(e["tick"]))
 			"goal":
 				Sfx.play("goal")
 				_goal_ms = now
+
+
+# ミス: 赤い縁 150 ms と、揺れ(設定で揺れを切った時は揺らさない)。
+func on_miss(now: int) -> void:
+	_flash_until = now + 150
+	if shake_on:
+		_shake_until = now + int(B.SHAKE_SEC * 1000)
 
 
 # 区画を越えた時の区切りの時間と、自己ベストの時との差(FR-15)。
@@ -210,8 +219,28 @@ func _paint_hud() -> void:
 	_seg.text = S.HUD_SEGMENT % int(snap["segment"])
 	_moves.text = S.HUD_MOVES % int(snap["moves"])
 	_clock.text = T.secs(int(snap["clock"]))
-	_clock.add_theme_color_override("font_color", Kit.C_TEXT if snap["clock_running"] or snap["over"] else Kit.C_DIM)
-	_cp.visible = Time.get_ticks_msec() < _cp_until
+	var c := Kit.C_FAST if snap["over"] else (Kit.C_TEXT if snap["clock_running"] else Kit.C_DIM)
+	_clock.add_theme_color_override("font_color", c)
+	var now := Time.get_ticks_msec()
+	_cp.visible = now < _cp_until
+	# 区切りの差とゴールの時計は、出た瞬間に少し大きく出て 150 ms で戻る(磨きで足した物)
+	_cp.scale = Vector2.ONE * pop(now - (_cp_until - int(B.CHECKPOINT_SHOW_SEC * 1000)))
+	_clock.scale = Vector2.ONE * (pop(now - _goal_ms) if _goal_ms >= 0 else 1.0)
+
+
+static func pop(age_ms: int) -> float:
+	return 1.0 + 0.3 * (1.0 - clampf(age_ms / 150.0, 0.0, 1.0))
+
+
+# 上の表示の下敷き(塔の模様の上でも字が読めるように。磨きで足した物)。下の端は薄くぼかす。
+class HudBand extends Control:
+	const SOLID := 140.0
+	const FADE := 40.0
+
+	func _draw() -> void:
+		draw_rect(Rect2(0, 0, size.x, SOLID), Color(Kit.C_BG, 0.82))
+		for i in 8:
+			draw_rect(Rect2(0, SOLID + FADE * i / 8.0, size.x, FADE / 8.0), Color(Kit.C_BG, 0.82 * (1.0 - (i + 1) / 9.0)))
 
 
 # ミスの時の赤い縁(150 ms)。

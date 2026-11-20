@@ -4,7 +4,13 @@
 
 **▶ 遊ぶ: https://takosasi-dev.github.io/tako-tower/** (デスクトップの Chrome・Edge・Firefox。マウスで遊びます。インストール不要)
 
-> v0.1.0。試作の段階です。腕の届く距離や飛ぶ速さなどの調整値は、まだ人に遊んでもらって決めた値ではありません。ブラウザでの起動も、まだ確かめていません(下の「開発の状況」)。
+> v0.2.0。試作の段階です。腕の届く距離や飛ぶ速さなどの調整値は、まだ人に遊んでもらって決めた値ではありません。ブラウザは、窓なしの Chrome で起動と一通りの流れまで確かめました(下の「開発の状況」)。
+
+<p>
+<img src="docs/title.png" width="32%" alt="タイトル。いつもの塔・今日の塔・設定のボタンと、下に遊び方の小さな絵">
+<img src="docs/play.png" width="32%" alt="プレイ。タコが側壁に張り付き、周りに腕の届く範囲の円。上に区画・時計・手数と区切りの差">
+<img src="docs/result.png" width="32%" alt="結果。時間と最高との差、区画ごとの時間の表、やり直す・コピー・タイトルへ">
+</p>
 
 ## 遊び方
 
@@ -46,7 +52,7 @@ https://takosasi-dev.github.io/tako-tower/
 
 - Godot 4.7.2-stable(GDScript、レンダラー Compatibility)
 - Web 書き出しはスレッド無し・拡張無し
-- 画面は縦 720×1280。スマホのブラウザは動作の対象に入れていません
+- 画面は縦 720×1280。PC の横長の画面では真ん中に置き、左右は背景色で埋めます。スマホのブラウザは動作の対象に入れていません
 
 ## 開発
 
@@ -66,16 +72,22 @@ godot --headless --export-release "Web" build/web/index.html
 pip install fonttools
 python tools/subset_font.py
 python tools/gen_sfx.py
+
+# 窓なし・消音・使い捨てのプロフィールの Chrome で、書き出した物を通して確かめ、画面を撮る(Node 22 以上・Chrome)
+godot --headless --script res://tools/tower_path.gd -- fixed out=res://build/fixed_path.json
+node tests/web/check.mjs          # 画像は build/web_shots/
+TT_URL=https://takosasi-dev.github.io/tako-tower/ node tests/web/check.mjs   # 公開した物
 ```
 
-`tools/gd.py` は上を窓なしで回す入口です(`python tools/gd.py test` など。Godot の場所は環境変数 `GODOT`)。
+`tools/gd.py` は上を窓なしで回す入口です(`python tools/gd.py test` など。Godot の場所は環境変数 `GODOT`)。`?debug=1` を付けて開いた時だけ、ゲームの状態を `window.ttState` に出します(`tests/web` が読む)。
 
 `main` に push すると、GitHub Actions がテスト → Web 書き出し → GitHub Pages への配置を行います(`.github/workflows/pages.yml`)。
 
 ## 開発の状況
 
-- v0.1.0。仕様のフェーズ 0〜4 の中身(画面 5 つ・区画 12 個・保存・影・効果音)を作り、テスト(ヘッドレス)が全部通ります。
-- 人が遊んで確かめることは、まだしていません: 手触りと調整値、ブラウザ(Chrome・Edge・Firefox)での起動と操作、タッチ、音の聞こえ方、1 回の長さ。
+- v0.2.0。仕様のフェーズ 0〜4 の中身(画面 5 つ・区画 12 個・保存・影・効果音)を作り、テスト(ヘッドレス、57 件)が全部通ります。v0.2.0 では見た目と演出を磨きました(`CHANGELOG.md`)。
+- ブラウザ: 窓なしの Chrome(書き出した物と公開した物)で、起動・タイトル・設定・いつもの塔をゴールまで・一時停止・結果・コピー・やり直し(影と区切りの差)・ミスから戻る・保存・読み込み後 3 分の通信が 0 件・コンソールのエラーが 0 件まで確かめました。入力は本物のマウスのイベント(一部は塔の中の点を直接押す確かめ用の口)と、タッチの模擬です。
+- まだ確かめていないこと: 人が遊んだ手触りと調整値・1 回の長さ、本物のマウスとキーボードとタッチ、Edge と Firefox、音の聞こえ方。
 - 仕様の「やめる基準」のうち、窓なしで判定できる物(区画のつなぎ目の決まりが成り立つか・検査の時間・区画づくりの時間)は当たっていません。人が遊んで決める物(同じ区画を続けてやり直したくなるか・遊んだ人が別のゲームと同じ遊びだと言わないか)は、まだ判定していません。
 - 名前「TakoTower」は仮の名前です。
 

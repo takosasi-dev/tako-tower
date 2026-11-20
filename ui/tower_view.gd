@@ -20,22 +20,33 @@ var _rings: Array = []  # [{p, at}]
 var _misses: Array = []  # 空振りの腕 [{from, to, kind, at}]
 var _miss_circle_at := -100000
 var _pieces: Array = []  # 崩れたマスの破片 [{col, row, at}]
+# 磨きで足した物(仕様書 §14): 目の向き・ミスの散る線・ゴールの輪
+var _look := Vector2.ZERO  # 目を寄せる向き(最後に腕を出した向き)
+var _last_p := Vector2.ZERO  # 前に描いた体の位置(ミスの時、散る線をここに出す)
+var _bursts: Array = []  # [{p, at, color, ms}]
 
 
 func event(e: Dictionary) -> void:
 	match e["type"]:
 		"cast_ok":
 			_arm_at = now_ms
+			_look = (Vector2(e["x"], e["y"]) - Vector2(climb.x, climb.y)).normalized()
 		"stick":
 			_squash_at = now_ms
 			_squash_axis = Vector2(e["dx"], e["dy"])
-			_rings.append({"p": Vector2(e["x"], e["y"]), "at": now_ms})
+			# 続けて張り付くほど輪が少し大きい(上限 6 回分)
+			_rings.append({"p": Vector2(e["x"], e["y"]), "at": now_ms, "grow": 28.0 + 4.0 * mini(int(e["chain"]) - 1, 6)})
 		"land":
 			_squash_at = now_ms
 			_squash_axis = Vector2(0, 1)
 		"cast_miss":
 			_misses.append({"from": Vector2(e["from_x"], e["from_y"]), "to": Vector2(e["x"], e["y"]), "kind": e["result"], "at": now_ms})
 			_miss_circle_at = now_ms
+			_look = (Vector2(e["x"], e["y"]) - Vector2(e["from_x"], e["from_y"])).normalized()
+		"miss":
+			_bursts.append({"p": _last_p, "at": now_ms, "color": Kit.C_SPIKE, "ms": 300.0})
+		"goal":
+			_bursts.append({"p": Vector2(climb.x, climb.y), "at": now_ms, "color": Kit.C_FAST, "ms": 500.0})
 		"crumble":
 			_pieces.append({"col": e["col"], "row": e["row"], "at": now_ms})
 
@@ -128,7 +139,18 @@ func _draw_fx() -> void:
 	for r: Dictionary in _rings:
 		var age := (now_ms - int(r["at"])) / 200.0
 		if age < 1.0:
-			draw_arc(r["p"], 16.0 + 28.0 * age, 0, TAU, 32, Color(Kit.C_SUCKER, 1.0 - age), 3.0, true)
+			draw_arc(r["p"], 16.0 + float(r["grow"]) * age, 0, TAU, 32, Color(Kit.C_SUCKER, 1.0 - age), 3.0, true)
+	# ミス・ゴール: 体の周りに 8 本の線が散る(色の変化は線だけで、画面全体の色は変えない)
+	for b: Dictionary in _bursts:
+		var age := (now_ms - int(b["at"])) / float(b["ms"])
+		if age >= 1.0:
+			continue
+		var c: Color = b["color"]
+		for k in 8:
+			var d := Vector2.from_angle(TAU * k / 8.0 + 0.2)
+			draw_line(b["p"] + d * (20.0 + 40.0 * age), b["p"] + d * (30.0 + 60.0 * age), Color(c, 1.0 - age), 3.0, true)
+		draw_arc(b["p"], 18.0 + 70.0 * age, 0, TAU, 40, Color(c, 0.6 * (1.0 - age)), 2.0, true)
+	_bursts = _bursts.filter(func(b: Dictionary) -> bool: return now_ms - int(b["at"]) < int(b["ms"]))
 	for m: Dictionary in _misses:
 		var age := (now_ms - int(m["at"])) / 200.0
 		if age >= 1.0:
@@ -151,26 +173,45 @@ func _draw_fx() -> void:
 func _draw_tako() -> void:
 	var p := Vector2(climb.x, climb.y)
 	var st: int = climb.state
-	# 届く範囲の円(空振りの後 0.3 秒は点線)
+	# 届く範囲の円(空振りの後 0.3 秒は点線)。PC の画面で縮んでも見えるよう 2 px(磨きで 1 px から変えた)
 	var circle := Color(1, 1, 1, 0.15)
 	if st != Climb.RESPAWN:
 		if now_ms - _miss_circle_at < 300:
 			for k in 48:
 				if k % 2 == 0:
-					draw_arc(p, B.ARM_REACH, TAU * k / 48.0, TAU * (k + 1) / 48.0, 4, circle, 1.0)
+					draw_arc(p, B.ARM_REACH, TAU * k / 48.0, TAU * (k + 1) / 48.0, 4, circle, 2.0)
 		else:
-			draw_arc(p, B.ARM_REACH, 0, TAU, 96, circle, 1.0)
-	# 腕(飛ぶ間と張り付いている間)
-	if st == Climb.FLY or st == Climb.STICK:
+			draw_arc(p, B.ARM_REACH, 0, TAU, 96, circle, 2.0)
+	var legs := Vector2(0, 1)
+	var wiggle := 1.5 * sin(now_ms * 0.004)
+	# 腕(飛ぶ間)。体の後ろに短い流れの線 3 本
+	if st == Climb.FLY:
 		var dest := Vector2(climb.dest_x, climb.dest_y)
 		var grow := clampf((now_ms - _arm_at) / 60.0, 0.0, 1.0)
-		var tip := p.lerp(dest, grow) if st == Climb.FLY else dest
-		if st == Climb.FLY:
-			var back := (p - dest).normalized() * 18.0
-			draw_line(p + back * 0.9, p + back * 2.2, Color(Kit.C_TAKO, 0.4), 4.0)
+		var tip := p.lerp(dest, grow)
+		var fwd := (dest - p).normalized() if dest.distance_to(p) > 0.5 else Vector2(0, -1)
+		var side := Vector2(-fwd.y, fwd.x)
+		for k in 3:
+			var o := side * (k - 1) * 9.0 - fwd * (22.0 + 6.0 * absf(k - 1))
+			draw_line(p + o, p + o - fwd * 16.0, Color(Kit.C_TAKO, 0.35), 2.0, true)
 		draw_line(p, tip, Kit.C_TAKO, 6.0, true)
 		for k in 3:
 			draw_circle(p.lerp(tip, (k + 1) / 4.0), 2.5, Kit.C_SUCKER)
+		legs = -fwd
+		wiggle = 0.0
+	# 張り付いている間: 足を壁へ向け、壁に触れた所に吸盤の線
+	var pad := PackedVector2Array()
+	if st == Climb.STICK:
+		var rect := Rect2(climb.tile_col * B.TILE, climb.tile_row * B.TILE, B.TILE, B.TILE)
+		var touch := Vector2(clampf(p.x, rect.position.x, rect.end.x), clampf(p.y, rect.position.y, rect.end.y))
+		if touch.distance_to(p) > 0.5:
+			legs = (touch - p).normalized()
+			var along := Vector2(-legs.y, legs.x)
+			pad = PackedVector2Array([touch - along * 7.0, touch + along * 7.0])
+	elif st == Climb.FALL:
+		wiggle = 4.0 * sin(now_ms * 0.03)  # 落ちる間は足をばたつかせる
+	_last_p = p
+	var blink := st != Climb.FLY and now_ms % 3300 < 110
 	var sx := 1.0
 	var sy := 1.0
 	var age := (now_ms - _squash_at) / 100.0
@@ -188,4 +229,6 @@ func _draw_tako() -> void:
 	var alpha := 1.0
 	if st == Climb.RESPAWN:
 		alpha = 0.2 + 0.8 * (1.0 - climb.respawn_left / float(B.RESPAWN_TICKS))
-	Kit.draw_tako(self, p, sx, sy, Color(Kit.C_TAKO, alpha))
+	Kit.draw_tako(self, p, sx, sy, Color(Kit.C_TAKO, alpha), _look, legs, wiggle, blink)
+	if not pad.is_empty():
+		draw_line(pad[0], pad[1], Kit.C_SUCKER, 4.0, true)  # 壁に触れた所の吸盤
