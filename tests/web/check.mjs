@@ -82,7 +82,7 @@ try {
 	expect(!!st1 && st1.play.clock > 0, '張り付くと時計が動く');
 
 	// 残りを流す。場面を撮る
-	const want = { split: true, brittle: true, pause: true, high: true };
+	const want = { split: true, brittle: true, crumbled: true, pause: true, high: true };
 	const rest = plan.moves.slice(1).map((m) => [m[0] + st1.play.tick - plan.moves[1][0] + 1, m[1], m[2]]);
 	const r1 = await climb(rest, async (st) => {
 		const p = st.play;
@@ -117,12 +117,17 @@ try {
 			await sleep(200);
 			await page.shot('s2_brittle');
 		}
+		if (want.crumbled && p.gone > 0) {
+			want.crumbled = false;
+			await page.shot('s2_crumbled');
+		}
 		if (want.high && p.segment === 5 && p.state === FLY) {
 			want.high = false;
 			await page.shot('s2_high');
 		}
 	});
 	expect(r1.screen === 'result' || r1.play?.over, `ゴールした: ${JSON.stringify(r1.play)}`);
+	await page.shot('s2_goal');
 	const res = await page.waitState((x) => x.screen === 'result', 5000);
 	expect(!!res, 'S3 結果');
 	await sleep(500);
@@ -154,6 +159,20 @@ try {
 		`横長の画面のクリックが塔の点に合う: ${JSON.stringify(gt?.play.tap)} / ${JSON.stringify(want0)}`);
 	await page.resize(PLAY);
 	await sleep(300);
+	// タブが裏に回ると一時停止(E-11)。戻っても自動では再開しない
+	await page.hide();
+	await sleep(800);
+	await page.show();
+	const hid = await page.waitState((x) => x.paused, 5000);
+	expect(!!hid, 'タブが裏に回ると一時停止');
+	if (hid) {
+		await sleep(500);
+		const tk = (await page.state()).play.tick;
+		await sleep(800);
+		expect((await page.state()).play.tick === tk, '戻っても止まったまま');
+		await page.key('Escape');
+		expect(!!(await page.waitState((x) => !x.paused, 3000)), 'Esc で続ける');
+	}
 	const want2 = { split: true, ghost: true };
 	const g0 = (await page.state()).play.tick;
 	// 2 回目は、1 手目の前に 1 秒待つ(影が先に行く)
@@ -181,8 +200,9 @@ try {
 	await sleep(300);
 
 	// 3 回目: 道の 46 手目まで流して手を止める。区画 5 でもろい壁が崩れてトゲに落ち、ミスになる(ヘッドレスの Climb で確かめた列)
-	await page.key('r');
-	expect(!!(await page.waitState((x) => x.screen === 'play', 3000)), 'R でもう一度');
+	const t3 = Date.now();
+	expect(await page.clickButton('retry'), '結果のやり直すをマウスで押す');
+	expect(!!(await page.waitState((x) => x.screen === 'play', 3000, 5)), `やり直す(押してから操作できるまで ${Date.now() - t3} ms。状態を読む間を含む)`);
 	// タッチ(模擬)で真下の足場を押す: マウスの左ボタンとして届き、押した点が合う(AC-25 は窓なし Chrome の模擬まで)
 	const gs = await page.state();
 	const want3 = [Math.round(gs.play.x), Math.round(gs.play.y + 30)];
@@ -200,6 +220,22 @@ try {
 		expect(!!back, '入口に戻って立つ');
 		await page.shot('s2_respawned');
 	}
+	// 4 回目: 点滅を弱める=入・揺れ=切 にして同じミス(NFR-12 の画像)
+	await page.key('Escape');
+	await page.waitState((x) => x.paused, 2000);
+	await page.clickButton('settings');
+	await page.waitState((x) => x.settings, 2000);
+	await page.clickButton('reduce_flash_true');
+	await page.clickButton('shake_false');
+	await sleep(200);
+	await page.shot('s4_settings_reduced');
+	await page.clickButton('back');
+	await page.waitState((x) => !x.settings && x.paused, 2000);
+	await page.clickButton('restart');
+	expect(!!(await page.waitState((x) => x.screen === 'play' && !x.paused && x.play.tick < 30, 3000)), '一時停止からやり直す');
+	const g4 = (await page.state()).play.tick;
+	const ms4 = await climb(plan.moves.slice(0, 46).map((m) => [m[0] + g4 + 2, m[1], m[2]]), async () => {}, (x) => x.play.misses > 0);
+	if (expect(ms4.play?.misses > 0, '点滅を弱めた時もミスになる')) await page.shot('s2_miss_reduced');
 	await page.key('Escape');
 	await page.waitState((x) => x.paused, 2000);
 	await page.clickButton('title');
@@ -208,6 +244,10 @@ try {
 	await page.shot('s1_title_record');
 	await sleep(1000);
 	await page.shot('s1_title_demo');
+	await page.resize({ width: 720, height: 1600, deviceScaleFactor: 1, mobile: false });
+	await sleep(500);
+	await page.shot('s1_title_tall');
+	await page.resize(PLAY);
 
 	// 読み込みの後 3 分の通信(AC-27)
 	const left = loadedAt + 180000 - Date.now();
@@ -216,6 +256,15 @@ try {
 	expect(after.length === 0, `読み込みの後の通信 ${after.length} 件(${Math.round((Date.now() - loadedAt) / 1000)} 秒見た)` + (after.length ? ': ' + after.map((r) => r.url).join(', ') : ''));
 	console.log('    転送した大きさ: ' + JSON.stringify(page.sizes()));
 	console.log('    押してから腕を描くまで・1 フレーム(ms): ' + JSON.stringify(await page.stats()));
+
+	// 開き直す(同じプロフィール): 保存を読み戻し、いつもの塔に影が出て、設定が残る
+	expect(await page.goto(page.url0), '同じプロフィールで開き直す');
+	expect(!!(await page.waitState((x) => x.screen === 'title', 30000)), '開き直してタイトル');
+	expect(await page.clickButton('fixed'), 'いつもの塔');
+	const rl = await page.waitState((x) => x.screen === 'play', 3000);
+	expect(rl?.play?.ghost === true, `開き直しても影が出る(保存を読めた): ${rl?.play?.ghost}`);
+	const sv = await page.saved();
+	expect(sv?.settings?.reduce_flash === true && sv?.settings?.shake === false, `設定が残る: ${JSON.stringify(sv?.settings)}`);
 	const errs = page.errors();
 	expect(errs.length === 0, `コンソールのエラー ${errs.length} 件` + (errs.length ? ': ' + errs.map((e) => e.text).join(' | ').slice(0, 400) : ''));
 } finally {

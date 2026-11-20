@@ -1,7 +1,7 @@
 // ブラウザでの自動の確認の土台(RootCall の tests/web/lib.mjs を写した物)。Web 書き出しを手元で配り、
 // 窓なし・消音・使い捨てのプロフィールの Chrome を CDP で動かす。状態は ?debug=1 の時の window.ttState を読むだけで、入力は本物のキーとマウスを送る。
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -97,7 +97,7 @@ export function serve() {
 	const server = spawn(py, ['-m', 'http.server', String(HTTP_PORT), '--bind', '127.0.0.1', '--directory', root], { stdio: 'ignore' });
 	return {
 		url: `http://127.0.0.1:${HTTP_PORT}/tako-tower/`,
-		stop: () => { server.kill(); rmSync(path.join(root, 'tako-tower'), { force: true }); },
+		stop: () => { server.kill(); rmSync(path.join(root, 'tako-tower'), { force: true }); rmdirSync(root); }, // 先にジャンクションだけ外す(中の build/web を消さない)
 	};
 }
 
@@ -205,12 +205,21 @@ export async function open(url, metrics = DESKTOP) {
 		},
 		hide: async () => {
 			await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
-			await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method: 'PUT' });
+			page.blank = (await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, { method: 'PUT' })).json()).id;
 		},
-		show: () => fetch(`http://127.0.0.1:${CDP_PORT}/json/activate/${target.id}`, { method: 'PUT' }),
+		// 元のタブに戻し、hide で開いた空のタブを閉じる(残すと、後の画面の撮影が止まることがあった)
+		show: async () => {
+			await fetch(`http://127.0.0.1:${CDP_PORT}/json/activate/${target.id}`, { method: 'PUT' });
+			if (page.blank) await fetch(`http://127.0.0.1:${CDP_PORT}/json/close/${page.blank}`, { method: 'PUT' });
+			page.blank = null;
+			await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+		},
+		// 撮れなければ 10 秒で諦めて null(全体が止まらないように)
 		shot: async (label) => {
 			const file = path.join(OUT, `${label}.png`);
-			writeFileSync(file, Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+			const r = await Promise.race([cdp.send('Page.captureScreenshot', { format: 'png' }), sleep(10000)]);
+			if (!r) { console.log(`    撮れなかった: ${label}`); return null; }
+			writeFileSync(file, Buffer.from(r.data, 'base64'));
 			return file;
 		},
 		errors: () => logs.filter((l) => ['error', 'exception'].includes(l.level) && !String(l.text).includes('favicon.ico')),

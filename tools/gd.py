@@ -22,6 +22,9 @@ def godot(args: list[str], timeout: int = 600) -> int:
     # user:// を手元の本物と分ける(既定は build/appdata)
     appdata = Path(env.get("TT_APPDATA") or ROOT / "build" / "appdata")
     appdata.mkdir(parents=True, exist_ok=True)
+    # build/ の中(書き出し・撮った画像)を Godot に取り込ませない
+    (ROOT / "build").mkdir(exist_ok=True)
+    (ROOT / "build" / ".gdignore").touch()
     env["APPDATA"] = str(appdata)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:

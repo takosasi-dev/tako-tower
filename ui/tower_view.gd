@@ -24,6 +24,7 @@ var _pieces: Array = []  # 崩れたマスの破片 [{col, row, at}]
 var _look := Vector2.ZERO  # 目を寄せる向き(最後に腕を出した向き)
 var _last_p := Vector2.ZERO  # 前に描いた体の位置(ミスの時、散る線をここに出す)
 var _bursts: Array = []  # [{p, at, color, ms}]
+const GONE_ALPHA := 0.2  # 崩れた跡の点線の濃さ
 
 
 func event(e: Dictionary) -> void:
@@ -46,7 +47,7 @@ func event(e: Dictionary) -> void:
 		"miss":
 			_bursts.append({"p": _last_p, "at": now_ms, "color": Kit.C_SPIKE, "ms": 300.0})
 		"goal":
-			_bursts.append({"p": Vector2(climb.x, climb.y), "at": now_ms, "color": Kit.C_FAST, "ms": 500.0})
+			_bursts.append({"p": Vector2(climb.x, climb.y), "at": now_ms, "color": Kit.C_FAST, "ms": 400.0})
 		"crumble":
 			_pieces.append({"col": e["col"], "row": e["row"], "at": now_ms})
 
@@ -69,6 +70,10 @@ func _draw() -> void:
 	for b: Dictionary in climb.snapshot()["brittle"]:
 		if not b["gone"]:
 			shake[int(b["row"]) * grid.cols + int(b["col"])] = int(b["left"])
+		else:
+			# 崩れて空いたマスに、薄い点線の跡を残す。戻る前の 0.5 秒で濃くなる(予告なしに戻らないように。磨きで足した物)
+			var a := GONE_ALPHA + (1.0 - clampf(int(b["left"]) / 60.0, 0.0, 1.0)) * 0.35
+			_dotted(Rect2(int(b["col"]) * t, int(b["row"]) * t, t, t).grow(-3), Color(Kit.C_BRITTLE, a))
 	var r0 := maxi(floori(top / t) - 1, 0)
 	var r1 := mini(floori(bottom / t) + 1, grid.rows - 1)
 	for row in range(r0, r1 + 1):
@@ -119,13 +124,7 @@ func _draw() -> void:
 func _draw_brittle(c: Vector2, s: float, cracks: int) -> void:
 	var rect := Rect2(c - Vector2(s, s) / 2.0, Vector2(s, s))
 	draw_rect(rect, Color(Kit.C_BRITTLE, 0.35))
-	# 点線の縁
-	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
-	for i in 4:
-		var a: Vector2 = corners[i]
-		var b: Vector2 = corners[(i + 1) % 4]
-		for d in 5:
-			draw_line(a.lerp(b, d / 5.0), a.lerp(b, (d + 0.55) / 5.0), Kit.C_BRITTLE, 2.0)
+	_dotted(rect, Kit.C_BRITTLE)
 	var lines := [[Vector2(-0.3, -0.35), Vector2(0.05, 0.0), Vector2(-0.1, 0.35)], [Vector2(0.05, 0.0), Vector2(0.35, 0.15)],
 		[Vector2(0.05, 0.0), Vector2(0.25, -0.35)], [Vector2(-0.1, 0.35), Vector2(-0.35, 0.2)]]
 	for i in mini(cracks, lines.size()):
@@ -133,6 +132,16 @@ func _draw_brittle(c: Vector2, s: float, cracks: int) -> void:
 		for v: Vector2 in lines[i]:
 			pts.append(c + v * s)
 		draw_polyline(pts, Kit.C_BRITTLE, 1.5)
+
+
+# 点線の縁(もろい壁と、崩れた跡)
+func _dotted(rect: Rect2, color: Color) -> void:
+	var corners := [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	for i in 4:
+		var a: Vector2 = corners[i]
+		var b: Vector2 = corners[(i + 1) % 4]
+		for d in 5:
+			draw_line(a.lerp(b, d / 5.0), a.lerp(b, (d + 0.55) / 5.0), color, 2.0)
 
 
 func _draw_fx() -> void:
@@ -146,10 +155,11 @@ func _draw_fx() -> void:
 		if age >= 1.0:
 			continue
 		var c: Color = b["color"]
+		# 張り付いた輪(最大 44〜68 px)を超えない大きさにする(一番はっきり返すのは張り付いた瞬間。画面設計書 §9)
 		for k in 8:
 			var d := Vector2.from_angle(TAU * k / 8.0 + 0.2)
-			draw_line(b["p"] + d * (20.0 + 40.0 * age), b["p"] + d * (30.0 + 60.0 * age), Color(c, 1.0 - age), 3.0, true)
-		draw_arc(b["p"], 18.0 + 70.0 * age, 0, TAU, 40, Color(c, 0.6 * (1.0 - age)), 2.0, true)
+			draw_line(b["p"] + d * (18.0 + 24.0 * age), b["p"] + d * (26.0 + 34.0 * age), Color(c, 1.0 - age), 3.0, true)
+		draw_arc(b["p"], 18.0 + 40.0 * age, 0, TAU, 40, Color(c, 0.6 * (1.0 - age)), 2.0, true)
 	_bursts = _bursts.filter(func(b: Dictionary) -> bool: return now_ms - int(b["at"]) < int(b["ms"]))
 	for m: Dictionary in _misses:
 		var age := (now_ms - int(m["at"])) / 200.0

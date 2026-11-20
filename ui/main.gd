@@ -313,7 +313,8 @@ func state() -> Dictionary:
 		var c: RefCounted = play.climb
 		out["play"] = {"state": c.state, "x": c.x, "y": c.y, "lock": c.cast_lock, "tick": c.sim_tick, "clock": c.clock,
 			"moves": c.moves, "misses": c.misses, "segment": c.checkpoint + 1, "over": c.over, "cam_y": play.cam_y,
-			"tower": c.tower.name, "ghost": play.ghost != null, "brittle": c.brittle.size(), "tap": [play.last_tap.x, play.last_tap.y]}
+			"tower": c.tower.name, "ghost": play.ghost != null, "brittle": c.brittle.size(),
+			"gone": c.brittle.values().filter(func(b: Dictionary) -> bool: return b["gone"]).size(), "tap": [play.last_tap.x, play.last_tap.y]}
 	return out
 
 
