@@ -28,6 +28,7 @@ var pause_view: Pause = null
 var settings_view: Settings = null
 var settings_from := "title"
 var run := {}  # 今の回 { kind, day, date, tower }
+var starts := 0  # 遊びを始めた回数(?debug=1 の状態に出す。連打で 2 回始まっていないかを見る)
 var auto := false
 var auto_log: Array = []
 var _visibility_cb: Variant = null
@@ -119,6 +120,7 @@ func _leave(n: Node) -> void:
 	for c: Node in [n] + n.find_children("*", "Control", true, false):
 		if c is Control:
 			(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+			(c as Control).focus_mode = Control.FOCUS_NONE  # 矢印・Tab で消えていく画面へ逃げない
 	if not (n is CanvasItem) or not is_inside_tree():
 		n.queue_free()
 		return
@@ -152,18 +154,24 @@ func _input(event: InputEvent) -> void:
 		return
 	if event.ctrl_pressed or event.meta_pressed or event.alt_pressed:
 		return  # 結果の枠の Ctrl+C などは部品に渡す
-	key(event.physical_keycode)
+	if key(event.physical_keycode):
+		get_viewport().set_input_as_handled()  # 部品にもう一度押させない
 
 
-# 画面設計書 §8 のキー。Enter は、フォーカスのあるボタンがあればそのボタンに任せる(押すのは 1 回だけ)。
-func key(code: int) -> void:
+# 画面設計書 §8 のキー。Enter・Space は、フォーカスのあるボタンがあれば、キーを押した瞬間にそのボタンを押す
+# (Godot のボタンは離した時に押されるので、v0.2.x の「押した瞬間に始まる」より遅くしないため)。押すのは 1 回だけ。
+# 部品に渡してはいけないキーを受けた時は true を返す。
+func key(code: int) -> bool:
 	var enter := code == KEY_ENTER or code == KEY_KP_ENTER
-	if enter and get_viewport().gui_get_focus_owner() is Button:
-		return
+	var focus := get_viewport().gui_get_focus_owner()
+	if (enter or code == KEY_SPACE) and focus is Button:
+		if not (focus as Button).disabled and not focus.has_meta("leaving") and focus.is_visible_in_tree():
+			(focus as Button).pressed.emit()
+		return true
 	if settings_view != null:
 		if code == KEY_ESCAPE:
 			_settings_back()
-		return
+		return false
 	match screen:
 		"title":
 			if enter:
@@ -179,6 +187,7 @@ func key(code: int) -> void:
 		"result":
 			if (code == KEY_ENTER or code == KEY_KP_ENTER or code == KEY_R) and current.can_retry():
 				_start(run)
+	return false
 
 
 # --- S1 タイトル ---
@@ -223,6 +232,7 @@ func _today() -> Dictionary:
 func _start(r: Dictionary) -> void:
 	_clear()
 	run = r
+	starts += 1
 	screen = "play"
 	backdrop.lite = true
 	play = Play.new()
@@ -323,6 +333,8 @@ func _show_settings(from: String) -> void:
 	settings_view.move_child(sea, 0)
 	if pause_view != null:
 		pause_view.visible = false
+	elif current != null:
+		current.visible = false  # タイトルを隠す(隠れたボタンへフォーカスが逃げない)。戻る時は作り直す
 	stage.add_child(settings_view)
 	_enter(settings_view, settings_view.first)
 
@@ -360,7 +372,7 @@ func _after_draw() -> void:
 
 
 func state() -> Dictionary:
-	var out := {"screen": screen, "paused": pause_view != null, "settings": settings_view != null, "buttons": {},
+	var out := {"screen": screen, "starts": starts, "paused": pause_view != null, "settings": settings_view != null, "buttons": {},
 		"sfx": Sfx.played, "unlocked": Sfx.unlocked, "save_failed": store.write_failed, "load_failed": store.load_failed}
 	var root: Control = settings_view if settings_view != null else (pause_view if pause_view != null else current)
 	if root != null:

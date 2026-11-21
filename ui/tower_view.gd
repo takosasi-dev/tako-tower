@@ -64,8 +64,8 @@ func _draw() -> void:
 	var tower: RefCounted = climb.tower
 	for i in B.SEGMENTS:
 		var y0 := float(tower.seg_top_row(i) * B.TILE)
-		draw_rect(Rect2(0, y0, B.VIEW_W, B.ROWS * t), Kit.C_BG.lerp(Kit.C_BG_TOP, i / float(B.SEGMENTS)))
-	draw_rect(Rect2(0, 0, B.VIEW_W, B.GOAL_ROWS * t), Kit.C_BG_TOP)
+		draw_rect(Rect2(0, y0, B.VIEW_W, B.ROWS * t), Kit.C_BG.lerp(Kit.C_FIELD_TOP, i / float(B.SEGMENTS)))
+	draw_rect(Rect2(0, 0, B.VIEW_W, B.GOAL_ROWS * t), Kit.C_FIELD_TOP)
 	var shake := {}
 	for b: Dictionary in climb.snapshot()["brittle"]:
 		if not b["gone"]:

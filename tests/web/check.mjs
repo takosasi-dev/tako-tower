@@ -249,6 +249,30 @@ try {
 	await page.shot('s1_title_tall');
 	await page.resize(PLAY);
 
+	// 本物のキー(v0.3.0): Enter は押した瞬間に効く(離す前)。連打しても遊びは 1 回だけ始まる。Esc の連打で一時停止が合う
+	await sleep(500);
+	const k0 = (await page.state()).starts;
+	const enter = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 };
+	await page.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...enter });
+	const kd = await page.waitState((x) => x.screen === 'play', 3000);
+	expect(kd?.starts === k0 + 1, `タイトルで Enter を押した瞬間に始まる(離す前): ${kd?.starts} / ${k0}`);
+	await page.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...enter });
+	for (let k = 0; k < 3; k++) { await page.key('Escape'); await sleep(30); }
+	const ke = await page.waitState((x) => x.screen === 'play', 2000);
+	expect(ke?.paused === true, 'Esc を 3 連打すると一時停止(止める・続ける・止める)');
+	expect(await page.clickButton('title'), '一時停止からタイトルへ');
+	await page.waitState((x) => x.screen === 'title', 3000);
+	await sleep(100);
+	const k1 = (await page.state()).starts;
+	for (let k = 0; k < 5; k++) { await page.key('Enter'); await sleep(30); }
+	await sleep(600);
+	const km = await page.state();
+	expect(km.screen === 'play' && km.starts === k1 + 1 && !km.paused, `Enter を 5 連打しても遊びは 1 回だけ始まる: ${km.starts - k1} 回`);
+	await page.key('Escape');
+	await page.waitState((x) => x.paused, 2000);
+	await page.clickButton('title');
+	await page.waitState((x) => x.screen === 'title', 3000);
+
 	// 読み込みの後 3 分の通信(AC-27)
 	const left = loadedAt + 180000 - Date.now();
 	if (left > 0) await sleep(left);

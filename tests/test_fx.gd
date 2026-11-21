@@ -179,11 +179,19 @@ func test_enter_key_defers_to_focused_button() -> bool:
 	var m := _main()
 	var daily := m.current.find_child("daily", true, false) as Button
 	daily.grab_focus()
-	m.key(KEY_ENTER)
-	eq(m.screen, "title", "フォーカスのあるボタンがある時、Enter は main で始めない(押すのは 1 回)")
+	ok(m.key(KEY_ENTER), "フォーカスのボタンがあれば、部品にもう一度押させない")
+	eq(m.screen, "play", "Enter を押した瞬間にフォーカスのボタン(今日の塔)を押す")
+	eq(m.run["kind"], "daily", "いつもの塔でなく、フォーカスの今日の塔")
+	m._show_title()
 	m.get_viewport().gui_release_focus()
-	m.key(KEY_ENTER)
-	eq(m.screen, "play", "フォーカスが無ければ Enter でいつもの塔")
+	ok(not m.key(KEY_ENTER), "フォーカスが無い時")
+	eq(m.run["kind"], "fixed", "フォーカスが無ければ Enter でいつもの塔")
+	m._show_title()
+	m._show_settings("title")
+	ok(not m.current.visible, "設定の間はタイトルを隠す(フォーカスが逃げない)")
+	var leaving: Control = m.current
+	m._settings_back()
+	eq((leaving.find_child("fixed", true, false) as Control).focus_mode, Control.FOCUS_NONE, "消えていく画面のボタンはフォーカスを取らない")
 	_done(m)
 	return true
 

@@ -10,6 +10,7 @@ const DISPLAY := "res://assets/fonts/Fredoka-Subset.ttf"  # 題字と数字(SIL 
 # 海(背景)。下ほど深い
 const C_BG := Color("082231")
 const C_BG_TOP := Color("0F3A4E")
+const C_FIELD_TOP := Color("0A2A3B")  # 塔の上の方の背景(トゲ・壁の縁との比を v0.2.0 と同じくらいに保つため、画面の後ろより暗い)
 const C_PANEL := Color("124055")  # 二番目のボタン・枠
 const C_PANEL_HI := Color("1A5470")  # その上にマウスが来た時
 const C_EDGE := Color("4F8FA3")  # 二番目のボタンの縁
@@ -93,8 +94,12 @@ static func button(node_name: String, text: String, size: int = 32, kind: String
 	b.focus_mode = Control.FOCUS_ALL
 	if size != 32:
 		b.add_theme_font_size_override("font_size", size)
-	b.focus_entered.connect(func() -> void: ui_sound("move"))
-	b.pressed.connect(func() -> void: ui_sound("ok"))
+	b.focus_entered.connect(func() -> void:
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):  # マウスで押した時のフォーカスでは鳴らさない
+			ui_sound("move"))
+	b.pressed.connect(func() -> void:
+		if not b.has_meta("quiet"):  # 音量の値は自分で張り付く音を鳴らす(1 回だけ)
+			ui_sound("ok"))
 	return b
 
 

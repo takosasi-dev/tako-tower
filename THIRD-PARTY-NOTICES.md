@@ -12,7 +12,7 @@
 
 ## Fredoka
 
-- ファイル: `assets/fonts/Fredoka-Subset.ttf`(題字と数字に使う。原本を ASCII と「−」だけに絞った物。`tools/subset_font.py` で作る。v0.3.0 で足した)
+- ファイル: `assets/fonts/Fredoka-Subset.ttf`(題字と数字に使う。原本を数字・記号と題字の字の 25 字に絞り、幅の軸を 100 に固定した物。`tools/subset_font.py` で作る。v0.3.0 で足した)
 - 原本: https://github.com/google/fonts/tree/main/ofl/fredoka の `Fredoka[wdth,wght].ttf`(コミット `295d98a7a0c17c68f1341eaeea354e7960ea70d3`)
 - 原本の SHA-256: `2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8`
 - ライセンス: SIL Open Font License, Version 1.1。原文は [`assets/fonts/OFL_Fredoka.txt`](assets/fonts/OFL_Fredoka.txt)(入手元の `OFL.txt` をそのまま置いた)

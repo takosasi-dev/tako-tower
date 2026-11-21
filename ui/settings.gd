@@ -45,6 +45,8 @@ func _row(title: String, y: float, key: String, values: Array) -> void:
 	for i in values.size():
 		var v: Variant = values[i][0]
 		var b := Kit.place(Kit.button("%s_%s" % [key, str(v)], values[i][1], 28, "Chip"), 68 + i * (w + 12), y + 52, w, 88)
+		if key == "volume":
+			b.set_meta("quiet", true)
 		b.pressed.connect(func() -> void: _pick(key, v))
 		add_child(b)
 		_buttons[key][v] = b

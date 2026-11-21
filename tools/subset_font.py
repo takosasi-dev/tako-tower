@@ -17,7 +17,7 @@ from fontTools.ttLib import TTFont
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "https://raw.githubusercontent.com/google/fonts/295d98a7a0c17c68f1341eaeea354e7960ea70d3/ofl/"
-# (原本, URL, sha256, 書き出す名前, 日本語の文言まで入れるか)。Fredoka は題字と数字だけ(ASCII と −。日本語は Noto Sans JP へ落ちる)
+# (原本, URL, sha256, 書き出す名前, 日本語の文言まで入れるか)。Fredoka は題字と数字だけ(DISPLAY の字。日本語は Noto Sans JP へ落ちる)
 FONTS = [
     ("NotoSansJP.ttf", BASE + "notosansjp/NotoSansJP%5Bwght%5D.ttf",
      "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f", "NotoSansJP-Subset.ttf", True),
@@ -26,6 +26,7 @@ FONTS = [
 ]
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 EXTRA = "−"  # 差の負の印
+DISPLAY = "0123456789.,:+-−/ TakoTwer"  # Fredoka で出す字: 時計・差・結果の数字(Kit.number)と題字(TakoTower)
 
 
 def strings_chars() -> set[str]:
@@ -36,7 +37,7 @@ def strings_chars() -> set[str]:
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     for src_name, url, sha, out_name, ja in FONTS:
-        chars = set(ASCII) | set(EXTRA) | (strings_chars() if ja else set())
+        chars = (set(ASCII) | set(EXTRA) | strings_chars()) if ja else set(DISPLAY)
         src = ROOT / "tools" / "font_src" / src_name
         out = ROOT / "assets" / "fonts" / out_name
         if not src.exists():
@@ -47,6 +48,9 @@ def main() -> None:
         if digest != sha:
             sys.exit(f"{src} の sha256 が違う: {digest}(消して取り直す)")
         font = TTFont(src)
+        if "fvar" in font and any(a.axisTag == "wdth" for a in font["fvar"].axes):
+            from fontTools.varLib import instancer
+            font = instancer.instantiateVariableFont(font, {"wdth": 100})  # 幅の軸は使わないので固定する(太さの軸は残す)
         options = subset.Options()
         options.layout_features = ["*"]
         subsetter = subset.Subsetter(options)
