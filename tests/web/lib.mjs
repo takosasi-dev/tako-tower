@@ -146,7 +146,7 @@ export async function open(url, metrics = DESKTOP) {
 		evaluate,
 		state: async () => { try { return JSON.parse(await evaluate('window.ttState') || '{}'); } catch { return {}; } },
 		stats: async () => { try { return JSON.parse(await evaluate('window.ttStats') || '{}'); } catch { return {}; } },
-		waitState: async (pred, timeoutMs = 15000) => waitFor(async () => { const s = await page.state(); return pred(s) ? s : null; }, timeoutMs, 50),
+		waitState: async (pred, timeoutMs = 15000, everyMs = 50) => waitFor(async () => { const s = await page.state(); return pred(s) ? s : null; }, timeoutMs, everyMs),
 		saved: async () => JSON.parse(await evaluate(`localStorage.getItem('${SAVE_KEY}')`) ?? 'null'),
 		// 同じプロフィールのまま別の URL を開き直す。Godot が起動するまで待つ
 		goto: async (to) => {

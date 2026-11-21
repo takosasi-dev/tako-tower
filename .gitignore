@@ -10,3 +10,4 @@ Thumbs.db
 
 # 字体の原本(tools/subset_font.py が取る)
 tools/font_src/
+__pycache__/

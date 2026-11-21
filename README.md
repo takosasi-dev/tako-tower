@@ -4,13 +4,15 @@
 
 **▶ 遊ぶ: https://takosasi-dev.github.io/tako-tower/** (デスクトップの Chrome・Edge・Firefox。マウスで遊びます。インストール不要)
 
-> v0.2.0。試作の段階です。腕の届く距離や飛ぶ速さなどの調整値は、まだ人に遊んでもらって決めた値ではありません。ブラウザは、窓なしの Chrome で起動と一通りの流れまで確かめました(下の「開発の状況」)。
+> v0.3.0。試作の段階です。腕の届く距離や飛ぶ速さなどの調整値は、まだ人に遊んでもらって決めた値ではありません。ブラウザは、窓なしの Chrome で起動と一通りの流れまで確かめました(下の「開発の状況」)。
 
 <p>
-<img src="docs/title.png" width="32%" alt="タイトル。いつもの塔・今日の塔・設定のボタンと、下に遊び方の小さな絵">
-<img src="docs/play.png" width="32%" alt="プレイ。タコが側壁に張り付き、周りに腕の届く範囲の円。上に区画・時計・手数と区切りの差">
-<img src="docs/result.png" width="32%" alt="結果。時間と最高との差、区画ごとの時間の表、やり直す・コピー・タイトルへ">
+<img src="docs/title.png" width="32%" alt="タイトル。丸い字の題字 Tako Tower と横に浮かぶタコ、珊瑚のいつもの塔のボタン、今日の塔・設定、下に遊び方の小さな絵。後ろは泡の昇る海">
+<img src="docs/play.png" width="32%" alt="プレイ。タコが側壁に張り付き、周りに腕の届く範囲の円。上に区画の 5 つの丸・大きな時計・手数と区切りの差">
+<img src="docs/result.png" width="32%" alt="結果。時間と「新しい記録」の札、最高との差、区画ごとの時間の表、やり直す・コピー・タイトルへ">
 </p>
+
+見た目は「海の中のポップ」です。深い海の青緑に泡と光の帯、タコと同じ珊瑚のボタン、丸い字の題字と数字(v0.3.0)。
 
 ## 遊び方
 
@@ -29,7 +31,7 @@
 - 時計は最初に張り付いた時から進み、塔の上の線を越えた時に止まります。ミスしても時計は止まりません。
 - 区画を越えるたびに、そこまでの時間と自己ベストとの差が出ます。
 - 2 回目からは、自己ベストの時のタコが薄い影になって一緒に登ります(設定で消せます)。
-- Esc で一時停止、R でやり直し、タイトルで Enter を押すと「いつもの塔」。
+- Esc で一時停止、R でやり直し、タイトルで Enter を押すと「いつもの塔」。メニューの画面は矢印キーと Enter でも選べます(腕の操作はマウスとタッチだけです)。
 
 ## いつもの塔と今日の塔
 
@@ -68,14 +70,19 @@ godot --headless --script res://tools/tower_path.gd -- fixed
 # Web 書き出し(書き出しテンプレート 4.7.2 が要る)
 godot --headless --export-release "Web" build/web/index.html
 
-# 字体を画面の文字に絞る・効果音を作る(Python)
+# 字体を画面の文字に絞る・効果音を作る・色のコントラスト比を確かめる(Python)
 pip install fonttools
 python tools/subset_font.py
 python tools/gen_sfx.py
+python tools/contrast.py
+
+# 画面の部品の見た目(ui/theme.tres)を ui/kit.gd から作り直す
+godot --headless --script res://tools/make_theme.gd
 
 # 窓なし・消音・使い捨てのプロフィールの Chrome で、書き出した物を通して確かめ、画面を撮る(Node 22 以上・Chrome)
 godot --headless --script res://tools/tower_path.gd -- fixed out=res://build/fixed_path.json
 node tests/web/check.mjs          # 画像は build/web_shots/
+node tests/web/shots.mjs after    # 全部の画面を 6 つの大きさで撮る(build/web_shots/after/)
 TT_URL=https://takosasi-dev.github.io/tako-tower/ node tests/web/check.mjs   # 公開した物
 ```
 
@@ -85,7 +92,7 @@ TT_URL=https://takosasi-dev.github.io/tako-tower/ node tests/web/check.mjs   # �
 
 ## 開発の状況
 
-- v0.2.0。仕様のフェーズ 0〜4 の中身(画面 5 つ・区画 12 個・保存・影・効果音)を作り、テスト(ヘッドレス、57 件)が全部通ります。v0.2.0 では見た目と演出を磨きました(`CHANGELOG.md`)。
+- v0.3.0。仕様のフェーズ 0〜4 の中身(画面 5 つ・区画 12 個・保存・影・効果音)を作り、テスト(ヘッドレス、63 件)が全部通ります。v0.2.0 で見た目と演出を磨き、v0.3.0 で UI を作り直しました(`CHANGELOG.md`)。
 - ブラウザ: 窓なしの Chrome(書き出した物と公開した物)で、起動・タイトル・設定・いつもの塔をゴールまで・一時停止(Esc・ボタン・タブが裏に回った時)・結果・コピー・やり直し(影と区切りの差)・ミスから戻る(点滅を弱める・揺れを切るの設定でも)・開き直して保存と設定を読み戻す・横長と縦長の画面・読み込み後 3 分の通信が 0 件・コンソールのエラーが 0 件まで確かめました。入力は本物のマウスのイベント(一部は塔の中の点を直接押す確かめ用の口)と、タッチの模擬です。
 - まだ確かめていないこと: 人が遊んだ手触りと調整値・1 回の長さ、本物のマウスとキーボードとタッチ、Edge と Firefox、音の聞こえ方。
 - 仕様の「やめる基準」のうち、窓なしで判定できる物(区画のつなぎ目の決まりが成り立つか・検査の時間・区画づくりの時間)は当たっていません。人が遊んで決める物(同じ区画を続けてやり直したくなるか・遊んだ人が別のゲームと同じ遊びだと言わないか)は、まだ判定していません。
@@ -93,4 +100,4 @@ TT_URL=https://takosasi-dev.github.io/tako-tower/ node tests/web/check.mjs   # �
 
 ## ライセンス
 
-MIT(`LICENSE`)。同梱の字体は SIL Open Font License 1.1 です(`THIRD-PARTY-NOTICES.md`)。
+MIT(`LICENSE`)。同梱の字体 2 つ(Noto Sans JP と、題字・数字の Fredoka)は SIL Open Font License 1.1 です(`THIRD-PARTY-NOTICES.md`)。

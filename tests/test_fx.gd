@@ -136,3 +136,109 @@ func test_title_demo_loops() -> bool:
 	ok(demo.t >= 0.0 and demo.t < demo.LOOP, "4 秒でくり返す")
 	_done(m)
 	return true
+
+
+# --- v0.3.0 の UI(画面の切り替わり・フォーカス・Enter・数え上げ・記録更新の祝い・点滅を弱める時の動き) ---
+
+func test_transition_keeps_state_sync_and_leaving_inert() -> bool:
+	var m := _main()
+	var title: Control = m.current
+	eq(String(title.first.name), "fixed", "タイトルはいつもの塔にフォーカスを置く")
+	_play(m)
+	eq(m.screen, "play", "押した時点で遊びの画面(切り替わりの動きを待たない)")
+	ok(title.is_inside_tree() and title.has_meta("leaving"), "出ていくタイトルは薄くなるまで残る")
+	eq(title.process_mode, Node.PROCESS_MODE_DISABLED, "出ていく画面は押せない(処理を止める)")
+	eq(m.play.position, Vector2.ZERO, "遊びの画面は動かさない(押した点がずれない)")
+	ok(not m.state()["buttons"].has("fixed"), "出ていく画面のボタンは状態に出さない")
+	eq((title.find_child("fixed", true, false) as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE, "出ていく画面はマウスを素通りにする")
+	m.play.pause_requested.emit()
+	var pv: Control = m.pause_view
+	m._on_pause("resume")
+	ok(pv.has_meta("leaving"), "続けると一時停止の板は薄くなって消える")
+	eq((pv.get_child(0) as Control).mouse_filter, Control.MOUSE_FILTER_IGNORE, "消えるまでの暗幕が押しを飲まない")
+	_done(m)
+	return true
+
+
+func test_enter_motion_follows_reduce_flash() -> bool:
+	var m := _main()
+	m._show_settings("title")
+	eq(m.settings_view.position.y, 28.0, "ふだんは下から浮かんで入る")
+	eq(m.settings_view.modulate.a, 0.0, "薄い所から")
+	m._settings_back()
+	m.store.set_setting("reduce_flash", true)
+	m._show_settings("title")
+	eq(m.settings_view.position.y, 0.0, "点滅を弱める時は動かさない(薄れだけ)")
+	ok(m.calm(), "動きを減らす")
+	eq(m.state()["buttons"]["back"], [360.0, 1060.0], "状態のボタンの位置は止まった後の位置")
+	_done(m)
+	return true
+
+
+func test_enter_key_defers_to_focused_button() -> bool:
+	var m := _main()
+	var daily := m.current.find_child("daily", true, false) as Button
+	daily.grab_focus()
+	m.key(KEY_ENTER)
+	eq(m.screen, "title", "フォーカスのあるボタンがある時、Enter は main で始めない(押すのは 1 回)")
+	m.get_viewport().gui_release_focus()
+	m.key(KEY_ENTER)
+	eq(m.screen, "play", "フォーカスが無ければ Enter でいつもの塔")
+	_done(m)
+	return true
+
+
+func test_result_count_up_and_focus() -> bool:
+	var prev := {"best_ticks": 1000, "splits": [200, 400, 600, 800, 1000]}
+	var r := _result(prev, [190, 390, 590, 780, 980])
+	eq(r._time.text, "0.00秒", "時間は 0 から数え上げる")
+	for k in 20:
+		r._process(1.0 / 60.0)
+	ok(r.can_retry() and r._retry.has_focus(), "300 ms 後にやり直すが押せて、フォーカスがある")
+	ok(r._time.text != "8.16秒", "まだ数えている")
+	for k in 30:
+		r._process(1.0 / 60.0)
+	eq(r._time.text, "8.16秒", "0.6 秒で最後の時間")
+	eq(r._badge, null, "最高でない時は札が無い")
+	_done(r)
+	return true
+
+
+func test_result_new_best_party_and_calm() -> bool:
+	var prev := {"best_ticks": 1000, "splits": [200, 400, 600, 800, 1000]}
+	var r := Result.new()
+	r.build({"ticks": 980, "moves": 40, "misses": 0, "splits": [190, 390, 590, 780, 980]}, {"prev": prev, "new_best": true, "first_today": false, "saved": true}, "x")
+	(Engine.get_main_loop() as SceneTree).root.add_child(r)
+	ok(r._badge != null and r._party != null, "新しい記録は札と泡で祝う")
+	for k in 60:
+		r._process(1.0 / 60.0)
+	eq(r._badge.size.y, 44.0, "札が出きる")
+	_done(r)
+	var c := Result.new()
+	c.build({"ticks": 980, "moves": 40, "misses": 0, "splits": [190, 390, 590, 780, 980]}, {"prev": prev, "new_best": true, "first_today": false, "saved": true}, "x", true)
+	(Engine.get_main_loop() as SceneTree).root.add_child(c)
+	c._process(1.0 / 60.0)
+	eq(c._time.text, "8.16秒", "点滅を弱める時は数え上げずに最後の時間")
+	eq(c._badge.size.y, 44.0, "札もすぐ出す")
+	eq(c._party.age, -1.0, "泡ははじけない")
+	_done(c)
+	var first := Result.new()
+	first.build({"ticks": 980, "moves": 40, "misses": 0, "splits": [190, 390, 590, 780, 980]}, {"prev": null, "new_best": true, "first_today": true, "saved": true}, "x")
+	ok(first._badge == null, "初めての記録は比べる物が無いので札を出さない")
+	first.free()
+	return true
+
+
+func test_ui_sound_quiet_after_press() -> bool:
+	Sfx.unlocked = true
+	var before: int = Sfx.played
+	Sfx.ui("ok")
+	Sfx.ui("move")
+	eq(Sfx.played, before + 1, "押した直後のフォーカスの移り(次の画面が置く物)では鳴らさない")
+	Sfx.ui("hush")
+	Sfx.ui("move")
+	eq(Sfx.played, before + 1, "画面が置くフォーカスでは鳴らさない")
+	Sfx._ui_at = -100000
+	Sfx.ui("move")
+	eq(Sfx.played, before + 2, "矢印キーでの移りは鳴らす")
+	return true

@@ -39,7 +39,10 @@ var _moves: Label
 var _cp: Label
 var _hint: Label
 var _edge: EdgeFlash
+var _pips: Pips
 var _sent := false
+var _moves_shown := -1
+var _moves_at := -100000  # 手数が変わった時刻(はねる)
 
 
 func start(tower: RefCounted, p_ghost: Variant, p_best_splits: Array) -> void:
@@ -56,26 +59,42 @@ func start(tower: RefCounted, p_ghost: Variant, p_best_splits: Array) -> void:
 	_view.ghost = ghost
 	add_child(_view)
 	cam_y = _cam_target()
-	_hint = Kit.label(S.HINT, 28, Kit.C_DIM, 500)
+	_hint = Kit.label(S.HINT, 28, Kit.C_TEXT, 700)
+	_hint.add_theme_constant_override("outline_size", 8)
+	_hint.add_theme_color_override("font_outline_color", Kit.C_BG)
 	add_child(Kit.place(_hint, 0, 0, B.VIEW_W, 40))
 	var band := HudBand.new()
 	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(Kit.place(band, 0, 0, B.VIEW_W, HudBand.SOLID + HudBand.FADE))
-	var pause :=Kit.place(Kit.button("pause", "II", 32), 24, 24, 88, 88)
+	# 一時停止: 丸いボタンに縦の棒 2 本(_draw。記号の字を使わない)。フォーカスは取らない(キーは Esc)
+	var pause := Kit.place(Kit.button("pause", "", 32), 24, 24, 88, 88)
+	pause.focus_mode = Control.FOCUS_NONE
+	var bars := PauseBars.new()
+	bars.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pause.add_child(Kit.place(bars, 0, 0, 88, 88))
 	pause.pressed.connect(func() -> void: pause_requested.emit())
 	add_child(pause)
-	_seg = Kit.label("", 28, Kit.C_TEXT, 500)
+	# 上の表示: 時計が一番大きい(64)。区画は字と 5 つの丸、手数は右。どれも濃い縁取りで、どんな背景の上でも読める
+	_seg = Kit.label("", 24, Kit.C_TEXT, 700)
 	_seg.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	add_child(Kit.place(_seg, 132, 44, 180, 48))
-	_clock = Kit.label("0.00", 44, Kit.C_DIM, 700)
-	add_child(Kit.place(_clock, 260, 36, 200, 60))
-	_moves = Kit.label("", 28, Kit.C_TEXT, 500)
+	_seg.add_theme_constant_override("outline_size", 8)
+	_seg.add_theme_color_override("font_outline_color", Kit.C_BG)
+	add_child(Kit.place(_seg, 130, 28, 150, 40))
+	_pips = Pips.new()
+	_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(Kit.place(_pips, 130, 72, 150, 30))
+	_clock = Kit.number("0.00", 64, Kit.C_DIM, 12)
+	add_child(Kit.place(_clock, 250, 18, 220, 80))
+	_moves = Kit.label("", 26, Kit.C_TEXT, 700)
 	_moves.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	add_child(Kit.place(_moves, 476, 44, 220, 48))
-	_cp = Kit.label("", 30, Kit.C_FAST, 700)
-	add_child(Kit.place(_cp, 0, 96, B.VIEW_W, 44))
+	_moves.add_theme_constant_override("outline_size", 8)
+	_moves.add_theme_color_override("font_outline_color", Kit.C_BG)
+	add_child(Kit.place(_moves, 496, 40, 200, 44))
+	_cp = Kit.number("", 32, Kit.C_FAST, 10)
+	add_child(Kit.place(_cp, 0, 98, B.VIEW_W, 44))
 	_cp.pivot_offset = _cp.size / 2.0
 	_clock.pivot_offset = _clock.size / 2.0
+	_moves.pivot_offset = Vector2(_moves.size.x, _moves.size.y / 2.0)
 	_edge = EdgeFlash.new()
 	_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(Kit.place(_edge, 0, 0, B.VIEW_W, B.VIEW_H))
@@ -217,7 +236,14 @@ func _place_view() -> void:
 func _paint_hud() -> void:
 	var snap: Dictionary = climb.snapshot()
 	_seg.text = S.HUD_SEGMENT % int(snap["segment"])
+	if _pips.segment != int(snap["segment"]):
+		_pips.segment = int(snap["segment"])
+		_pips.at = Time.get_ticks_msec()
 	_moves.text = S.HUD_MOVES % int(snap["moves"])
+	if int(snap["moves"]) != _moves_shown:
+		if _moves_shown >= 0:
+			_moves_at = Time.get_ticks_msec()
+		_moves_shown = int(snap["moves"])
 	_clock.text = T.secs(int(snap["clock"]))
 	var c := Kit.C_FAST if snap["over"] else (Kit.C_TEXT if snap["clock_running"] else Kit.C_DIM)
 	_clock.add_theme_color_override("font_color", c)
@@ -226,21 +252,59 @@ func _paint_hud() -> void:
 	# 区切りの差とゴールの時計は、出た瞬間に少し大きく出て 150 ms で戻る(磨きで足した物)
 	_cp.scale = Vector2.ONE * pop(now - (_cp_until - int(B.CHECKPOINT_SHOW_SEC * 1000)))
 	_clock.scale = Vector2.ONE * (pop(now - _goal_ms) if _goal_ms >= 0 else 1.0)
+	# 手数は変わった瞬間に 1.15 倍から 120 ms で戻る(数字の変化の小さなはね。v0.3.0)
+	_moves.scale = Vector2.ONE * (1.0 + 0.15 * (1.0 - clampf((now - _moves_at) / 120.0, 0.0, 1.0)))
+	_pips.now = now
+	_pips.queue_redraw()
 
 
 static func pop(age_ms: int) -> float:
 	return 1.0 + 0.3 * (1.0 - clampf(age_ms / 150.0, 0.0, 1.0))
 
 
-# 上の表示の下敷き(塔の模様の上でも字が読めるように。磨きで足した物)。下の端は薄くぼかす。
+# 上の表示の下敷き(塔の模様の上でも字が読めるように)。深い海の色で、下の端は波の形(v0.3.0)。その下は薄くぼかす。
 class HudBand extends Control:
 	const SOLID := 140.0
 	const FADE := 40.0
 
 	func _draw() -> void:
-		draw_rect(Rect2(0, 0, size.x, SOLID), Color(Kit.C_BG, 0.82))
+		var pts := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0)])
+		for k in range(24, -1, -1):
+			var x := size.x * k / 24.0
+			pts.append(Vector2(x, SOLID - 10.0 + 6.0 * sin(k * 0.9)))
+		draw_colored_polygon(pts, Color(Kit.C_BG, 0.86))
 		for i in 8:
-			draw_rect(Rect2(0, SOLID + FADE * i / 8.0, size.x, FADE / 8.0), Color(Kit.C_BG, 0.82 * (1.0 - (i + 1) / 9.0)))
+			draw_rect(Rect2(0, SOLID + FADE * i / 8.0 - 4.0, size.x, FADE / 8.0), Color(Kit.C_BG, 0.5 * (1.0 - (i + 1) / 9.0)))
+
+
+# 一時停止のボタンの印: 丸い端の縦の棒 2 本。
+class PauseBars extends Control:
+	func _draw() -> void:
+		for x: float in [36.0, 52.0]:
+			draw_line(Vector2(x, 30), Vector2(x, 54), Kit.C_TEXT, 8.0, true)
+			draw_circle(Vector2(x, 30), 4.0, Kit.C_TEXT)
+			draw_circle(Vector2(x, 54), 4.0, Kit.C_TEXT)
+
+
+# 区画の 5 つの丸: 越えた区画は珊瑚で塗り、今いる区画は縁の輪。新しい区画に入った瞬間に丸がはねる。
+class Pips extends Control:
+	var segment := 1
+	var at := -100000
+	var now := 0
+
+	func _draw() -> void:
+		for i in 5:
+			var c := Vector2(10 + i * 27, 14)
+			var r := 8.0
+			if i == segment - 1:
+				r *= 1.0 + 0.5 * (1.0 - clampf((now - at) / 180.0, 0.0, 1.0))
+			draw_circle(c, r + 2.5, Kit.C_BG)
+			if i < segment - 1:
+				draw_circle(c, r, Kit.C_TAKO)
+			elif i == segment - 1:
+				draw_circle(c, r, Kit.C_SUCKER)
+			else:
+				draw_arc(c, r - 1.0, 0, TAU, 20, Color(Kit.C_TEXT, 0.55), 2.0, true)
 
 
 # ミスの時の赤い縁(150 ms)。

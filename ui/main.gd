@@ -15,6 +15,7 @@ const Title := preload("res://ui/title.gd")
 const Result := preload("res://ui/result.gd")
 const Settings := preload("res://ui/settings.gd")
 const Pause := preload("res://ui/pause.gd")
+const Backdrop := preload("res://ui/backdrop.gd")
 
 var stage: Control
 var store: Store
@@ -37,16 +38,20 @@ var lat_ms: Array = []  # 押してから腕を描いたフレームまで(NFR-2
 var _last_frame := 0
 var _arm_drawn := -100000
 var _tap_cb: Variant = null
+var backdrop: Control
+# 画面の切り替わり(v0.3.0。見た目だけ。screen・current・play は今どおりすぐ切り替える)
+const ENTER_SEC := 0.26  # 入る: 下から 28 px 浮かんで、少し行き過ぎて戻る(ぷるん)
+const ENTER_FADE_SEC := 0.16
+const LEAVE_SEC := 0.15  # 出る: 薄くなって消える(押せない)
+const PLAY_FADE_SEC := 0.12  # 遊びに入る時は薄い所から出るだけ(押した点がずれないよう動かさない)
 
 
 func _ready() -> void:
 	stage = Control.new()
 	stage.size = Vector2(B.VIEW_W, B.VIEW_H)
 	add_child(stage)
-	var bg := ColorRect.new()
-	bg.color = Kit.C_BG
-	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stage.add_child(Kit.place(bg, -2000, -2000, B.VIEW_W + 4000, B.VIEW_H + 4000))
+	backdrop = Backdrop.new()
+	stage.add_child(Kit.place(backdrop, 0, 0, B.VIEW_W, B.VIEW_H))  # 見えている範囲全部を塗る(E-19 の余りも)
 	auto = OS.get_cmdline_user_args().has("--auto")
 	if auto and FileAccess.file_exists(Store.PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Store.PATH))  # 自動の通しは記録なしから始める
@@ -83,20 +88,61 @@ static func _flag(flag: String) -> bool:
 
 func _apply_settings() -> void:
 	Sfx.set_volume(int(store.settings()["volume"]))
+	backdrop.still = calm()
 
 
+# 点滅を弱める=入 の時は、動きも減らす(切り替わりは短い薄れだけ、題字と光は止める)。
+func calm() -> bool:
+	return bool(store.settings()["reduce_flash"])
+
+
+# 前の画面を片付ける。出ていく画面は押せなくし(処理を止める)、薄くしてから消す。
 func _clear() -> void:
+	get_viewport().gui_release_focus()  # 出ていく画面のボタンにフォーカスを残さない(Enter で 2 回始まらない)
 	for n: Node in [pause_view, settings_view]:
 		if n != null:
-			n.queue_free()
+			_leave(n)
 	pause_view = null
 	settings_view = null
 	for c in stage.get_children():
-		if c.get_index() == 0:
+		if c == backdrop or c.has_meta("leaving"):
 			continue
-		c.queue_free()
+		_leave(c)
 	current = null
 	play = null
+
+
+func _leave(n: Node) -> void:
+	n.set_meta("leaving", true)
+	n.process_mode = Node.PROCESS_MODE_DISABLED
+	# 処理を止めてもマウスは受けてしまう(一時停止の暗幕が、消えるまでの間の押しを飲んだ)。全部の部品を素通りにする
+	for c: Node in [n] + n.find_children("*", "Control", true, false):
+		if c is Control:
+			(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if not (n is CanvasItem) or not is_inside_tree():
+		n.queue_free()
+		return
+	var tw := get_tree().create_tween()  # 木に付けた tween(止めた画面に付けると動かない)
+	tw.tween_property(n, "modulate:a", 0.0, LEAVE_SEC)
+	tw.tween_callback(n.queue_free)
+
+
+# 入ってくる画面の動き。play は動かさずに薄い所から出す。focus は入った時にフォーカスを置くボタン。
+func _enter(c: Control, focus: Control = null, is_play := false) -> void:
+	if focus != null:
+		Sfx.ui("hush")
+		focus.grab_focus.call_deferred()
+	if not is_inside_tree():
+		return
+	c.modulate.a = 0.0
+	var tw := get_tree().create_tween()
+	if is_play or calm():
+		tw.tween_property(c, "modulate:a", 1.0, PLAY_FADE_SEC)
+		return
+	c.position.y = 28.0
+	tw.set_parallel(true)
+	tw.tween_property(c, "modulate:a", 1.0, ENTER_FADE_SEC)
+	tw.tween_property(c, "position:y", 0.0, ENTER_SEC).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _input(event: InputEvent) -> void:
@@ -109,15 +155,18 @@ func _input(event: InputEvent) -> void:
 	key(event.physical_keycode)
 
 
-# 画面設計書 §8 のキー。
+# 画面設計書 §8 のキー。Enter は、フォーカスのあるボタンがあればそのボタンに任せる(押すのは 1 回だけ)。
 func key(code: int) -> void:
+	var enter := code == KEY_ENTER or code == KEY_KP_ENTER
+	if enter and get_viewport().gui_get_focus_owner() is Button:
+		return
 	if settings_view != null:
 		if code == KEY_ESCAPE:
 			_settings_back()
 		return
 	match screen:
 		"title":
-			if code == KEY_ENTER or code == KEY_KP_ENTER:
+			if enter:
 				_on_title("fixed")
 		"play":
 			if code == KEY_ESCAPE:
@@ -137,12 +186,14 @@ func key(code: int) -> void:
 func _show_title() -> void:
 	_clear()
 	screen = "title"
+	backdrop.lite = false
 	var d := _today()
 	var t := Title.new()
 	t.build(store, d["day"], d["date"], data_ok)
 	t.chosen.connect(_on_title)
 	stage.add_child(t)
 	current = t
+	_enter(t, t.first)
 	if auto:
 		_auto_title.call_deferred()
 
@@ -173,6 +224,7 @@ func _start(r: Dictionary) -> void:
 	_clear()
 	run = r
 	screen = "play"
+	backdrop.lite = true
 	play = Play.new()
 	var st: Dictionary = store.settings()
 	play.shake_on = st["shake"]
@@ -188,6 +240,7 @@ func _start(r: Dictionary) -> void:
 	play.finished.connect(_on_finished)
 	play.pause_requested.connect(_pause)
 	current = play
+	_enter(play, null, true)
 	if auto:
 		_auto_play.call_deferred()
 
@@ -200,12 +253,14 @@ func _pause() -> void:
 	pause_view.build()
 	pause_view.picked.connect(_on_pause)
 	stage.add_child(pause_view)
+	_enter(pause_view, pause_view.first)
 
 
 func _on_pause(what: String) -> void:
 	match what:
 		"resume":
-			pause_view.queue_free()
+			get_viewport().gui_release_focus()
+			_leave(pause_view)
 			pause_view = null
 			play.paused = false  # 押した tick から再開(待ち時間なし)
 		"restart":
@@ -242,12 +297,14 @@ func _on_finished(result: Dictionary) -> void:
 		auto_log.append("描いた %d 回 / 区切り「%s」 / 最高との比べ %s" % [play.view_draws(), play.last_split, rec["prev"] != null])
 	_clear()
 	screen = "result"
+	backdrop.lite = false
 	var res := Result.new()
-	res.build(result, rec, text)
+	res.build(result, rec, text, calm())
 	res.retry.connect(func() -> void: _start(run))
 	res.to_title.connect(_show_title)
 	stage.add_child(res)
 	current = res
+	_enter(res)  # フォーカスは「やり直す」が押せるようになった時に置く(result.gd)
 	if auto:
 		auto_log.append("result %s %s 手 %d ミス %d" % [tower.name, result["ticks"], result["moves"], result["misses"]])
 		_auto_result.call_deferred()
@@ -260,24 +317,27 @@ func _show_settings(from: String) -> void:
 	settings_view = Settings.new()
 	settings_view.build(store)
 	settings_view.back.connect(_settings_back)
-	var dim := ColorRect.new()
-	dim.color = Kit.C_BG
-	settings_view.add_child(Kit.place(dim, 0, 0, B.VIEW_W, B.VIEW_H))
-	settings_view.move_child(dim, 0)
+	var sea := Backdrop.new()
+	sea.still = calm()
+	settings_view.add_child(Kit.place(sea, 0, 0, B.VIEW_W, B.VIEW_H))  # 後ろの画面を隠す海(余りまで)
+	settings_view.move_child(sea, 0)
 	if pause_view != null:
 		pause_view.visible = false
 	stage.add_child(settings_view)
+	_enter(settings_view, settings_view.first)
 
 
 func _settings_back() -> void:
 	_apply_settings()
-	settings_view.queue_free()
+	get_viewport().gui_release_focus()
+	_leave(settings_view)
 	settings_view = null
 	if settings_from == "pause" and play != null and pause_view != null:
 		var st: Dictionary = store.settings()
 		play.shake_on = st["shake"]
 		play.reduce_flash = st["reduce_flash"]
 		pause_view.visible = true
+		_enter(pause_view, pause_view.first)
 	else:
 		_show_title()
 
@@ -307,7 +367,8 @@ func state() -> Dictionary:
 		for b in root.find_children("*", "Button", true, false):
 			var btn := b as Button
 			if btn.is_visible_in_tree() and not btn.disabled:
-				var at := btn.global_position - stage.position + btn.size / 2  # ステージの中の座標(gameCss が画面に直す)
+				# ステージの中の座標(gameCss が画面に直す)。入ってくる動きの途中でも、止まった後の位置を出す
+				var at := btn.global_position - stage.position - root.position + btn.size / 2
 				out["buttons"][String(btn.name)] = [at.x, at.y]
 	if play != null:
 		var c: RefCounted = play.climb

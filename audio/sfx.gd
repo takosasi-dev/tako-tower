@@ -10,6 +10,8 @@ var unlocked := false
 var played := 0  # 再生を始めた回数(テストが読む)
 
 var _streams := {}
+var _db := 0.0
+var _ui_at := -100000  # 最後に UI の音を鳴らした時刻(ms)
 var _voices: Array[AudioStreamPlayer] = []
 var _next := 0
 
@@ -36,18 +38,35 @@ func unlock() -> void:
 # 25〜100 は 2 乗で dB に直す(100 → 0 dB、75 → −5 dB、50 → −12 dB、25 → −24 dB)。0 は鳴らさない。
 func set_volume(percent: int) -> void:
 	volume = clampi(percent, 0, 100)
-	var db := linear_to_db(pow(volume / 100.0, 2.0)) if volume > 0 else -80.0
+	_db = linear_to_db(pow(volume / 100.0, 2.0)) if volume > 0 else -80.0
 	for voice in _voices:
-		voice.volume_db = db
+		voice.volume_db = _db
 
 
-# semitones だけ高くして鳴らす(張り付く音の連続)。
-func play(sound_name: String, semitones: int = 0) -> void:
+# 画面の部品の小さな音(v0.3.0)。新しい音は作らず、今の 9 個を高く・小さく鳴らす(仕様の「効果音 9 種以内」)。
+# move はフォーカスが動いた時(押した直後と画面に入った時のフォーカスでは鳴らさない)、ok は押した時。
+func ui(kind: String) -> void:
+	var now := Time.get_ticks_msec()
+	if kind == "hush":  # これから動くフォーカスは画面が置く物なので鳴らさない
+		_ui_at = now
+		return
+	if kind == "move":
+		if now - _ui_at < 150:
+			return
+		play("cast", 12, -10.0)
+	else:
+		play("stick", 5, -6.0)
+	_ui_at = now
+
+
+# semitones だけ高くして鳴らす(張り付く音の連続)。gain_db で音量の設定から下げる。
+func play(sound_name: String, semitones: int = 0, gain_db := 0.0) -> void:
 	if not unlocked or volume <= 0 or not _streams.has(sound_name):
 		return
 	var voice := _voices[_next]
 	_next = (_next + 1) % VOICES
 	voice.stream = _streams[sound_name]
 	voice.pitch_scale = pow(2.0, semitones / 12.0)
+	voice.volume_db = _db + gain_db
 	voice.play()
 	played += 1
