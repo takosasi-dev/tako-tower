@@ -25,6 +25,10 @@ var _look := Vector2.ZERO  # 目を寄せる向き(最後に腕を出した向�
 var _last_p := Vector2.ZERO  # 前に描いた体の位置(ミスの時、散る線をここに出す)
 var _bursts: Array = []  # [{p, at, color, ms}]
 const GONE_ALPHA := 0.2  # 崩れた跡の点線の濃さ
+# 遊びの画面の海(v0.3.1): タイトルと同じ上からの光と泡を、塔のマスより後ろに薄く描く。画面に止まった位置で描く(塔と一緒に流れない)
+var still := false  # 点滅を弱める: 光を揺らさず、泡を半分の速さに
+const BUBBLES := 9
+var _bubbles: Array = Kit.bubble_seeds(BUBBLES, 777)
 
 
 func event(e: Dictionary) -> void:
@@ -66,6 +70,7 @@ func _draw() -> void:
 		var y0 := float(tower.seg_top_row(i) * B.TILE)
 		draw_rect(Rect2(0, y0, B.VIEW_W, B.ROWS * t), Kit.C_BG.lerp(Kit.C_FIELD_TOP, i / float(B.SEGMENTS)))
 	draw_rect(Rect2(0, 0, B.VIEW_W, B.GOAL_ROWS * t), Kit.C_FIELD_TOP)
+	_draw_water(top)
 	var shake := {}
 	for b: Dictionary in climb.snapshot()["brittle"]:
 		if not b["gone"]:
@@ -84,8 +89,7 @@ func _draw() -> void:
 			var rect := Rect2(col * t, row * t, t, t)
 			match k:
 				Grid.WALL:
-					draw_rect(rect, Kit.C_WALL)
-					draw_rect(rect.grow(-1), Kit.C_WALL_EDGE, false, 2.0)
+					Kit.draw_block(self, rect, open_sides(grid, col, row))
 					if (row - (B.GOAL_ROWS - 1)) % B.ROWS == 0 and col >= 7 and col <= 10:
 						draw_line(rect.position, rect.position + Vector2(t, 0), Kit.C_LEDGE, 2.0)
 				Grid.SLICK:
@@ -119,6 +123,29 @@ func _draw() -> void:
 	if ghost != null and not ghost.is_over():
 		Kit.draw_tako(self, Vector2(ghost.x, ghost.y), 1.0, 1.0, Color(1, 1, 1, 0.35))
 	_draw_tako()
+
+
+# 壁のマスの外に出た辺(Kit.draw_block の open: 1 上・2 下・4 左・8 右)。隣が壁でない辺だけ縁を引く。塔の外の列は閉じた扱い(v0.3.1)。
+static func open_sides(grid: RefCounted, col: int, row: int) -> int:
+	return (1 if grid.kind(col, row - 1) != Grid.WALL else 0) | (2 if grid.kind(col, row + 1) != Grid.WALL else 0) \
+		| (4 if col > 0 and grid.kind(col - 1, row) != Grid.WALL else 0) | (8 if col < grid.cols - 1 and grid.kind(col + 1, row) != Grid.WALL else 0)
+
+
+# 海の空気(画面の座標で描き、top で塔の座標へ直す): 上ほど水の青緑が差し、光の筋 3 本、泡 9 個。
+# どれも薄く、マスより先に描くので、トゲ・もろい壁・タコ・届く輪の手前には出ない。
+func _draw_water(top: float) -> void:
+	var w := float(B.VIEW_W)
+	var h := float(B.VIEW_H)
+	for i in 6:
+		draw_rect(Rect2(0, top + h * 0.1 * i, w, h * 0.1), Color(Kit.C_AQUA, 0.035 * (1.0 - i / 6.0)))
+	var sec := now_ms / 1000.0
+	Kit.draw_rays(self, Rect2(0, top, w, h), sec, still, 0.025)
+	var span := h + 80.0
+	var speed := 0.5 if still else 1.0
+	for b: Array in _bubbles:
+		var y: float = top + h + 40.0 - fmod(sec * speed * float(b[1]) + float(b[3]) * span, span)
+		var x: float = w * (0.12 + 0.76 * float(b[0])) + (0.0 if still else sin(sec * 0.9 + float(b[3]) * 6.0) * 10.0)
+		Kit.draw_bubble(self, Vector2(x, y), b[2], 0.4)
 
 
 func _draw_brittle(c: Vector2, s: float, cracks: int) -> void:

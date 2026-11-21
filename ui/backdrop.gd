@@ -14,13 +14,7 @@ var _seeds: Array = []  # [x の割合, 速さ, 半径, 位相]
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var s := 12345
-	for i in COUNT:
-		var r: Array = []
-		for k in 4:
-			s = (s * 1103515245 + 12345) % 2147483648
-			r.append(s / 2147483648.0)
-		_seeds.append([r[0], 14.0 + 26.0 * r[1], 3.0 + 9.0 * r[2] * r[2], r[3]])
+	_seeds = Kit.bubble_seeds(COUNT, 12345)
 
 
 func _process(delta: float) -> void:

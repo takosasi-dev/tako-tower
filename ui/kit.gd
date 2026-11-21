@@ -11,6 +11,7 @@ const DISPLAY := "res://assets/fonts/Fredoka-Subset.ttf"  # 題字と数字(SIL 
 const C_BG := Color("082231")
 const C_BG_TOP := Color("0F3A4E")
 const C_FIELD_TOP := Color("0A2A3B")  # 塔の上の方の背景(トゲ・壁の縁との比を v0.2.0 と同じくらいに保つため、画面の後ろより暗い)
+const C_GLOW := Color("0E3443")  # 遊びの画面で上からの光が一番強く重なる所(上の表示の帯のすぐ下)。tower_view.gd の _draw_water の濃さ(水色 3.5%×5/6 と光の筋 2.5%)を C_FIELD_TOP に重ねて手で求めた値。濃さを変えたら求め直して tools/contrast.py を回す(v0.3.1)
 const C_PANEL := Color("124055")  # 二番目のボタン・枠
 const C_PANEL_HI := Color("1A5470")  # その上にマウスが来た時
 const C_EDGE := Color("4F8FA3")  # 二番目のボタンの縁
@@ -244,6 +245,11 @@ static func draw_sea(ci: CanvasItem, rect: Rect2, t: float, still := false) -> v
 	for i in steps:
 		var y0 := rect.position.y + rect.size.y * i / float(steps)
 		ci.draw_rect(Rect2(rect.position.x, y0, rect.size.x, rect.size.y / steps + 1.0), C_BG_TOP.lerp(C_BG, i / float(steps - 1)))
+	draw_rays(ci, rect, t, still)
+
+
+# 上から斜めに差す光の筋 3 本(タイトルの海と遊びの画面で同じ形)。still で揺らさない。
+static func draw_rays(ci: CanvasItem, rect: Rect2, t: float, still := false, alpha := 0.04) -> void:
 	for k in 3:
 		var sway := 0.0 if still else sin(t * 0.25 + k * 1.7) * 30.0
 		var x := rect.position.x + rect.size.x * (0.1 + 0.3 * k) + sway
@@ -251,7 +257,73 @@ static func draw_sea(ci: CanvasItem, rect: Rect2, t: float, still := false) -> v
 		var w := 70.0 + 30.0 * k
 		var h := rect.size.y * 0.7
 		ci.draw_colored_polygon(PackedVector2Array([Vector2(x, top), Vector2(x + w, top),
-			Vector2(x + w + h * 0.35, top + h), Vector2(x + h * 0.25, top + h)]), Color(C_AQUA, 0.04))
+			Vector2(x + w + h * 0.35, top + h), Vector2(x + h * 0.25, top + h)]), Color(C_AQUA, alpha))
+
+
+# 泡の種(決まった数列): [x の割合, 速さ, 半径, 位相]。
+static func bubble_seeds(count: int, seed_value: int) -> Array:
+	var out: Array = []
+	var s := seed_value
+	for i in count:
+		var r: Array = []
+		for k in 4:
+			s = (s * 1103515245 + 12345) % 2147483648
+			r.append(s / 2147483648.0)
+		out.append([r[0], 14.0 + 26.0 * r[1], 3.0 + 9.0 * r[2] * r[2], r[3]])
+	return out
+
+
+# 壁のマス(v0.3.1): タイトルのボタンと同じ「明るい縁・下の暗い厚み・外に出た角の丸み」。
+# open は外に出た辺(1 上・2 下・4 左・8 右)。隣も壁の辺は縁を引かずにつなげるので、足場や側壁が 1 枚の板に見える。
+# 角が無いマス(側壁の中ほど)は rect と線だけで描き、角のあるマスだけ StyleBoxFlat(open ごとに 1 度だけ作る)。
+const BLOCK_R := 10
+const BLOCK_LIP := 6
+static var _blocks := {}
+
+
+static func draw_block(ci: CanvasItem, rect: Rect2, open: int) -> void:
+	var body := rect
+	if open & 2:  # 下が外: 下の 6 px は暗い厚み
+		body.size.y -= BLOCK_LIP
+	var corners := (open & 5 == 5) or (open & 9 == 9) or (open & 6 == 6) or (open & 10 == 10)
+	if not corners:
+		if open & 2:
+			ci.draw_rect(Rect2(rect.position.x, body.end.y, rect.size.x, BLOCK_LIP), C_LIP)
+		ci.draw_rect(body, C_WALL)
+		if open & 1:
+			ci.draw_line(body.position + Vector2(0, 1.5), Vector2(body.end.x, body.position.y + 1.5), C_WALL_EDGE, 3.0)
+		if open & 2:
+			ci.draw_line(Vector2(body.position.x, body.end.y - 1.0), body.end - Vector2(0, 1.0), C_WALL_EDGE, 2.0)
+		if open & 4:
+			ci.draw_line(body.position + Vector2(1.0, 0), Vector2(body.position.x + 1.0, body.end.y), C_WALL_EDGE, 2.0)
+		if open & 8:
+			ci.draw_line(Vector2(body.end.x - 1.0, body.position.y), body.end - Vector2(1.0, 0), C_WALL_EDGE, 2.0)
+		return
+	if not _blocks.has(open):
+		_blocks[open] = _block_boxes(open)
+	var boxes: Array = _blocks[open]
+	if open & 2:
+		ci.draw_style_box(boxes[0], rect)
+	ci.draw_style_box(boxes[1], body)
+
+
+static func _block_boxes(open: int) -> Array:
+	var lip := StyleBoxFlat.new()
+	lip.bg_color = C_LIP
+	var body := StyleBoxFlat.new()
+	body.bg_color = C_WALL
+	body.border_color = C_WALL_EDGE
+	body.border_width_top = 3 if open & 1 else 0
+	body.border_width_bottom = 2 if open & 2 else 0
+	body.border_width_left = 2 if open & 4 else 0
+	body.border_width_right = 2 if open & 8 else 0
+	for s: StyleBoxFlat in [lip, body]:
+		s.corner_radius_top_left = BLOCK_R if open & 5 == 5 else 0
+		s.corner_radius_top_right = BLOCK_R if open & 9 == 9 else 0
+		s.corner_radius_bottom_left = BLOCK_R if open & 6 == 6 else 0
+		s.corner_radius_bottom_right = BLOCK_R if open & 10 == 10 else 0
+		s.corner_detail = 5
+	return [lip, body]
 
 
 # タコ(丸・目 2 個・足の線 4 本。丸と線だけ)。sx・sy でつぶし、alpha で薄くする。r で大きさ(既定 16)。

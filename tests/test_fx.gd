@@ -45,6 +45,40 @@ func test_miss_flash_follows_reduce_flash() -> bool:
 	return true
 
 
+# v0.3.1: 遊びの画面の海(光の筋・泡)は点滅を弱めるに従って止まる。壁の縁は外に出た辺だけ(塔の外の列は閉じる)。
+func test_play_sea_and_wall_edges() -> bool:
+	var m := _main()
+	var p := _play(m)
+	p.reduce_flash = false
+	p._place_view()
+	ok(not p._view.still, "ふだんは光と泡が動く")
+	p.reduce_flash = true
+	p._place_view()
+	ok(p._view.still, "点滅を弱める時は止める")
+	var g: RefCounted = p.climb.grid
+	var seen := {"side": false, "top": false, "inner": false}
+	for row in g.rows:
+		for col in g.cols:
+			if g.kind(col, row) != Grid.WALL:
+				continue
+			var o := View.open_sides(g, col, row)
+			if col == 0:
+				ok(o & 4 == 0, "塔の左の外は閉じる")
+				seen["side"] = true
+			if col == g.cols - 1:
+				ok(o & 8 == 0, "塔の右の外は閉じる")
+			if g.kind(col, row - 1) == Grid.EMPTY:
+				ok(o & 1 != 0, "上が空きなら上の縁")
+				seen["top"] = true
+			if g.kind(col, row - 1) == Grid.WALL and g.kind(col, row + 1) == Grid.WALL and col > 0 and g.kind(col - 1, row) == Grid.WALL \
+					and col < g.cols - 1 and g.kind(col + 1, row) == Grid.WALL:
+				eq(o, 0, "囲まれたマスは縁なし")
+				seen["inner"] = true
+	ok(seen["side"] and seen["top"], "側壁と足場の上の面があった: " + str(seen))
+	_done(m)
+	return true
+
+
 func test_miss_shake_follows_setting() -> bool:
 	var m := _main()
 	var p := _play(m)

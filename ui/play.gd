@@ -222,6 +222,7 @@ func _place_view() -> void:
 		off = Vector2(B.SHAKE_PX if (now / 16) % 2 == 0 else -B.SHAKE_PX, 0)
 	_view.position = Vector2(0, -cam_y) + off
 	_view.view_top = cam_y
+	_view.still = reduce_flash
 	_view.queue_redraw()
 	var hint_y: float = climb.tower.seg_start(0).y - 120.0 - cam_y
 	_hint.position.y = hint_y
@@ -262,17 +263,27 @@ static func pop(age_ms: int) -> float:
 	return 1.0 + 0.3 * (1.0 - clampf(age_ms / 150.0, 0.0, 1.0))
 
 
-# 上の表示の下敷き(塔の模様の上でも字が読めるように)。深い海の色で、下の端は波の形(v0.3.0)。その下は薄くぼかす。
+# 上の表示の下敷き(塔の模様の上でも字が読めるように)。下の端は波の形(v0.3.0)。その下は薄くぼかす。
+# v0.3.1: タイトルの二番目のボタンと同じ板にする(深い海の面・水色がかった縁・下の暗い厚み)。
 class HudBand extends Control:
 	const SOLID := 140.0
 	const FADE := 40.0
+	const LIP := 6.0
 
 	func _draw() -> void:
 		var pts := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0)])
+		var rim := PackedVector2Array()
 		for k in range(24, -1, -1):
 			var x := size.x * k / 24.0
-			pts.append(Vector2(x, SOLID - 10.0 + 6.0 * sin(k * 0.9)))
-		draw_colored_polygon(pts, Color(Kit.C_BG, 0.86))
+			var p := Vector2(x, SOLID - 10.0 - LIP + 6.0 * sin(k * 0.9))
+			pts.append(p)
+			rim.append(p)
+		var lip := pts.duplicate()
+		for i in range(2, lip.size()):
+			lip[i] += Vector2(0, LIP)
+		draw_colored_polygon(lip, Color(Kit.C_LIP, 0.6))
+		draw_colored_polygon(pts, Color(Kit.C_PANEL.lerp(Kit.C_BG, 0.5), 0.66))  # 下のトゲが透けて見える濃さ(90% では隠れた)
+		draw_polyline(rim, Color(Kit.C_EDGE, 0.6), 2.0, true)  # 区切りの差の字に掛かるので控えめに
 		for i in 8:
 			draw_rect(Rect2(0, SOLID + FADE * i / 8.0 - 4.0, size.x, FADE / 8.0), Color(Kit.C_BG, 0.5 * (1.0 - (i + 1) / 9.0)))
 

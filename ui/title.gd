@@ -120,8 +120,7 @@ class Demo extends Control:
 
 	func _draw() -> void:
 		for r: Rect2 in [Rect2(300, 190, 120, 20), Rect2(120, 72, 40, 40), Rect2(560, 24, 40, 40)]:
-			draw_rect(r, Kit.C_WALL)
-			draw_rect(r.grow(-1), Kit.C_WALL_EDGE, false, 2.0)
+			Kit.draw_block(self, r, 15)  # 遊びの画面の壁と同じ形(v0.3.1)
 		draw_line(Vector2(300, 190), Vector2(420, 190), Kit.C_LEDGE, 2.0)
 		var p := S0
 		var flying := false

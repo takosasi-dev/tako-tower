@@ -1,6 +1,6 @@
 // ブラウザでの自動の確認の土台(RootCall の tests/web/lib.mjs を写した物)。Web 書き出しを手元で配り、
 // 窓なし・消音・使い捨てのプロフィールの Chrome を CDP で動かす。状態は ?debug=1 の時の window.ttState を読むだけで、入力は本物のキーとマウスを送る。
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -227,8 +227,9 @@ export async function open(url, metrics = DESKTOP) {
 			try { await cdp.send('Browser.close'); } catch { /* もう閉じた */ }
 			cdp.close();
 			await Promise.race([new Promise((ok) => proc.once('exit', ok)), sleep(3000)]);
-			proc.kill();
-			rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+			// 自分が起動した親 PID の木だけ止める(名前やポートで探さない。依頼者の Chrome が同じ PC で動いている)
+			if (proc.exitCode === null) spawnSync('taskkill', ['/T', '/F', '/PID', String(proc.pid)], { stdio: 'ignore' });
+			try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }); } catch { /* EPERM で残ったら諦める */ }
 		},
 	};
 	return page;
